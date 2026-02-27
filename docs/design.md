@@ -585,6 +585,96 @@ CHECK(test_tracer.event_count() == 2);  // enter + exit
 
 ---
 
+## Future: Cross-Thread Causal Profiling
+
+The current scope model is single-threaded: a scope opens and closes on the
+same thread, and nesting is implicit via the call stack. This works well for
+power profiling (which peripheral is active?) and simple timing (how long did
+this operation take?).
+
+However, real firmware has **shared service threads** (e.g. notecardIO queue,
+SPI bus manager) that serve requests from multiple concurrent actions. Profiling
+these requires two views:
+
+- **Vertical (action-centric):** "What did `sync_gps_fix` cost end-to-end?"
+  Follow the causal chain from trigger to completion, across thread boundaries.
+  Include the slice of notecardIO time, memory, and data used to fulfill this
+  specific action.
+
+- **Horizontal (service-centric):** "What did notecardIO do in total?" All
+  requests served, queue depth, throughput, latency distribution. Independent
+  of which action triggered each request.
+
+### Primitives
+
+Three concepts compose to support both views:
+
+| Concept | What it is | Chrome Trace equivalent |
+|---------|-----------|----------------------|
+| **Scope** | A START/STOP pair on a single thread (existing) | `ph:"B"` / `ph:"E"` with `tid` |
+| **Flow** | A causal link across thread/scope boundaries | `ph:"s"` / `ph:"f"` with shared `id` |
+| **Resource** | A measurable dimension (time, current, memory, bytes) | Counter tracks, external data |
+
+The only new primitive needed is **Flow**. Everything else (scopes, resources,
+aggregation) composes on top.
+
+### Example: action enqueues work on a service thread
+
+```
+// Action thread (tid=2): GPS sync
+TRACE_SCOPE(tracer, "gps_sync")
+  TRACE_FLOW_START(tracer, "notecard_req", flow_id=42)   // enqueue
+  // ... blocks or continues ...
+  TRACE_FLOW_END(tracer, "notecard_req", flow_id=42)     // response received
+
+// Service thread (tid=1): notecardIO processes request
+TRACE_FLOW_STEP(tracer, "notecard_req", flow_id=42)      // dequeue
+TRACE_SCOPE(tracer, "notecard_transaction")
+  // ... J-request, wait for response ...
+```
+
+### Serial protocol extension
+
+```
+T=1.000 GPS_SYNC_STARTED          tid=2
+T=1.001 NOTECARD_REQ_STARTED      tid=2  flow_id=42
+T=1.050 NOTECARD_REQ_STARTED      tid=1  flow_id=42
+T=1.200 NOTECARD_REQ_STOPPED      tid=1
+T=1.210 GPS_SYNC_STOPPED          tid=2
+```
+
+Chrome JSON already supports flow events natively:
+```json
+{"ph":"s","ts":1001,"name":"notecard_req","id":42,"pid":1,"tid":2}
+{"ph":"f","ts":1050,"name":"notecard_req","id":42,"pid":1,"tid":1}
+```
+
+### Host-side analysis
+
+The host (embedded-bridge) would extend EventCapture with a `Flow` type:
+
+- **Vertical analysis:** Given a top-level scope, traverse its flow edges to
+  find all service-thread scopes that were causally linked. Sum resources
+  (time, current, memory) across the full causal tree.
+
+- **Horizontal analysis:** Ignore flow edges. Aggregate all scopes on a
+  service thread to get total service cost, throughput, and utilization.
+
+### Implementation notes
+
+- Flow IDs can be simple incrementing counters (uint16 wrapping is fine —
+  flows are short-lived relative to the counter space).
+- The `ITracer` interface would gain `flow_start(name, id)`,
+  `flow_step(name, id)`, `flow_end(name, id)`.
+- NullTracer's flow methods are no-ops. BufferTracer stores flow events in
+  the ring buffer (same 7-byte format, new event_type values).
+- This is **not needed for Phase 1 power profiling** — peripheral-level
+  START/STOP is sufficient. Flow events become important when profiling
+  multi-threaded application logic (e.g. "what's the total cost of a
+  Notehub sync cycle?").
+
+---
+
 ## Memory & Code Budget
 
 | Component | Code size | RAM (when active) | RAM (NullTracer) |
