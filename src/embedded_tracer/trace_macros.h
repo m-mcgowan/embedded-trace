@@ -1,0 +1,22 @@
+#pragma once
+
+/**
+ * @brief Zero-cost trace macros.
+ *
+ * When EMBEDDED_TRACER_ENABLED is 0 or undefined, both macros compile
+ * to nothing — zero code size, zero RAM, zero CPU.
+ */
+
+// Concatenation helpers for unique variable names
+#define ET_CONCAT_(a, b) a##b
+#define ET_CONCAT(a, b) ET_CONCAT_(a, b)
+
+#if EMBEDDED_TRACER_ENABLED
+  #define TRACE_SCOPE(tracer, name) \
+      auto ET_CONCAT(_et_scope_, __LINE__) = (tracer).scope(name)
+  #define TRACE_COUNTER(tracer, name, val) \
+      (tracer).counter(name, val)
+#else
+  #define TRACE_SCOPE(tracer, name) ((void)0)
+  #define TRACE_COUNTER(tracer, name, val) ((void)0)
+#endif

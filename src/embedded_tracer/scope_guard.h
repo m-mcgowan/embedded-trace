@@ -1,0 +1,39 @@
+#pragma once
+
+#include "types.h"
+
+namespace et {
+
+class ITracer;  // forward declaration — avoids circular include
+
+/**
+ * @brief RAII scope lifetime guard.
+ *
+ * Records scope-enter on construction (by the tracer that creates it),
+ * scope-exit on destruction. Move-only — scopes are not copyable.
+ * A null exit_fn produces a no-op guard (used by NullTracer).
+ */
+class ScopeGuard {
+public:
+    /// Callback invoked on scope exit. Tracer implementations set this
+    /// to record the exit event without exposing internal API.
+    using ExitFn = void (*)(void* context, const char* name, ScopeId scope_id);
+
+    ScopeGuard() : context_(nullptr), exit_fn_(nullptr), name_(nullptr), scope_id_(0) {}
+    ScopeGuard(void* context, ExitFn exit_fn, const char* name, ScopeId scope_id);
+    ~ScopeGuard();
+
+    // Move-only
+    ScopeGuard(ScopeGuard&& o) noexcept;
+    ScopeGuard& operator=(ScopeGuard&&) noexcept;
+    ScopeGuard(const ScopeGuard&) = delete;
+    ScopeGuard& operator=(const ScopeGuard&) = delete;
+
+private:
+    void* context_;
+    ExitFn exit_fn_;
+    const char* name_;
+    ScopeId scope_id_;
+};
+
+} // namespace et

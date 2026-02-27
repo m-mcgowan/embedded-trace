@@ -1,0 +1,15 @@
+{
+    "name": "embedded-tracer",
+    "version": "0.1.0",
+    "description": "Lightweight hierarchical scope tracing for embedded systems with Perfetto output",
+    "keywords": ["tracer", "profiling", "perfetto", "instrumentation", "embedded", "esp32"],
+    "license": "BSD-3-Clause",
+    "platforms": ["native", "espressif32"],
+    "frameworks": ["arduino", "espidf"],
+    "build": {
+        "srcFilter": [
+            "+<embedded_tracer/>",
+            "+<embedded_tracer_esp32/>"
+        ]
+    }
+}
