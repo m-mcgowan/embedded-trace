@@ -1,57 +1,32 @@
 #include "serial_tracer.h"
 #include <cstdio>
-#include <cstring>
 
 namespace et {
 
+static ThreadId default_tid() { return 1; }
+
 SerialTracer::SerialTracer(Print& output, TimestampFn timestamp_fn,
-                           bool ppk2_markers, ProcessId pid)
+                           ProcessId pid, ThreadIdFn tid_fn)
     : output_(output), timestamp_fn_(timestamp_fn),
-      ppk2_markers_(ppk2_markers), pid_(pid) {}
+      pid_(pid), tid_fn_(tid_fn ? tid_fn : default_tid) {}
 
 void SerialTracer::emit_begin(const char* name) {
     TimestampUs ts = timestamp_fn_();
-
-    if (ppk2_markers_) {
-        char marker[128];
-        char upper_name[64];
-        size_t i = 0;
-        for (const char* p = name; *p && i < sizeof(upper_name) - 1; ++p, ++i) {
-            upper_name[i] = (*p >= 'a' && *p <= 'z') ? (*p - 32) : *p;
-        }
-        upper_name[i] = '\0';
-        snprintf(marker, sizeof(marker), "T=%u.%06u %s_STARTED",
-                 ts / 1000000, ts % 1000000, upper_name);
-        output_.println(marker);
-    }
-
+    ThreadId tid = tid_fn_();
     char json[192];
     snprintf(json, sizeof(json),
-             "{\"ph\":\"B\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":1}",
-             ts, name, pid_);
+             "{\"ph\":\"B\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
+             ts, name, pid_, tid);
     output_.println(json);
 }
 
 void SerialTracer::emit_end(const char* name, ScopeId /*scope_id*/) {
     TimestampUs ts = timestamp_fn_();
-
-    if (ppk2_markers_) {
-        char marker[128];
-        char upper_name[64];
-        size_t i = 0;
-        for (const char* p = name; *p && i < sizeof(upper_name) - 1; ++p, ++i) {
-            upper_name[i] = (*p >= 'a' && *p <= 'z') ? (*p - 32) : *p;
-        }
-        upper_name[i] = '\0';
-        snprintf(marker, sizeof(marker), "T=%u.%06u %s_STOPPED",
-                 ts / 1000000, ts % 1000000, upper_name);
-        output_.println(marker);
-    }
-
+    ThreadId tid = tid_fn_();
     char json[192];
     snprintf(json, sizeof(json),
-             "{\"ph\":\"E\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":1}",
-             ts, name, pid_);
+             "{\"ph\":\"E\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
+             ts, name, pid_, tid);
     output_.println(json);
 }
 
@@ -62,10 +37,41 @@ ScopeGuard SerialTracer::scope(const char* name) {
 
 void SerialTracer::counter(const char* name, int64_t value) {
     TimestampUs ts = timestamp_fn_();
+    ThreadId tid = tid_fn_();
     char json[192];
     snprintf(json, sizeof(json),
-             "{\"ph\":\"C\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"args\":{\"value\":%lld}}",
-             ts, name, pid_, (long long)value);
+             "{\"ph\":\"C\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u,\"args\":{\"value\":%lld}}",
+             ts, name, pid_, tid, (long long)value);
+    output_.println(json);
+}
+
+void SerialTracer::flow_start(const char* name, FlowId id) {
+    TimestampUs ts = timestamp_fn_();
+    ThreadId tid = tid_fn_();
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ph\":\"s\",\"ts\":%u,\"name\":\"%s\",\"id\":%u,\"pid\":%u,\"tid\":%u}",
+             ts, name, (unsigned)id, pid_, tid);
+    output_.println(json);
+}
+
+void SerialTracer::flow_step(const char* name, FlowId id) {
+    TimestampUs ts = timestamp_fn_();
+    ThreadId tid = tid_fn_();
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ph\":\"t\",\"ts\":%u,\"name\":\"%s\",\"id\":%u,\"pid\":%u,\"tid\":%u}",
+             ts, name, (unsigned)id, pid_, tid);
+    output_.println(json);
+}
+
+void SerialTracer::flow_end(const char* name, FlowId id) {
+    TimestampUs ts = timestamp_fn_();
+    ThreadId tid = tid_fn_();
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ph\":\"f\",\"ts\":%u,\"name\":\"%s\",\"id\":%u,\"pid\":%u,\"tid\":%u}",
+             ts, name, (unsigned)id, pid_, tid);
     output_.println(json);
 }
 

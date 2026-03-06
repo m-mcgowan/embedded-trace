@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scope_guard.h"
+#include "types.h"
 #include <cstdint>
 
 namespace et {
@@ -23,6 +24,17 @@ public:
 
     /// Record a counter value at the current timestamp.
     virtual void counter(const char* name, int64_t value) = 0;
+
+    /// Mark the start of a causal flow across thread/scope boundaries.
+    /// The flow_id links related flow_start/step/end events.
+    virtual void flow_start(const char* name, FlowId id) { (void)name; (void)id; }
+
+    /// Mark an intermediate step in a causal flow (e.g. dequeue on a
+    /// service thread after enqueue on the action thread).
+    virtual void flow_step(const char* name, FlowId id) { (void)name; (void)id; }
+
+    /// Mark the end of a causal flow.
+    virtual void flow_end(const char* name, FlowId id) { (void)name; (void)id; }
 };
 
 } // namespace et

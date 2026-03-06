@@ -133,6 +133,15 @@ public:
     /// independent of scopes — they appear as time-series tracks in
     /// Perfetto alongside the scope swim lanes.
     virtual void counter(const char* name, int64_t value) = 0;
+
+    /// Mark the start of a causal flow across thread/scope boundaries.
+    virtual void flow_start(const char* name, FlowId id) {}
+
+    /// Mark an intermediate step in a causal flow (e.g. dequeue).
+    virtual void flow_step(const char* name, FlowId id) {}
+
+    /// Mark the end of a causal flow.
+    virtual void flow_end(const char* name, FlowId id) {}
 };
 ```
 
@@ -169,12 +178,21 @@ private:
 
 #if EMBEDDED_TRACER_ENABLED
   #define TRACE_SCOPE(tracer, name) \
-      auto _trace_scope_##__LINE__ = (tracer).scope(name)
+      auto ET_CONCAT(_et_scope_, __LINE__) = (tracer).scope(name)
   #define TRACE_COUNTER(tracer, name, val) \
       (tracer).counter(name, val)
+  #define TRACE_FLOW_START(tracer, name, id) \
+      (tracer).flow_start(name, id)
+  #define TRACE_FLOW_STEP(tracer, name, id) \
+      (tracer).flow_step(name, id)
+  #define TRACE_FLOW_END(tracer, name, id) \
+      (tracer).flow_end(name, id)
 #else
   #define TRACE_SCOPE(tracer, name) ((void)0)
   #define TRACE_COUNTER(tracer, name, val) ((void)0)
+  #define TRACE_FLOW_START(tracer, name, id) ((void)0)
+  #define TRACE_FLOW_STEP(tracer, name, id) ((void)0)
+  #define TRACE_FLOW_END(tracer, name, id) ((void)0)
 #endif
 ```
 
@@ -208,33 +226,31 @@ no-op branch. The compiler can often eliminate the guard entirely.
 ### BufferTracer
 
 Platform-agnostic binary ring buffer tracer. The timestamp source is injected
-so it works on any platform:
+so it works on any platform. Stores events in a compact binary format for
+post-hoc capture where serial output would perturb timing.
 
 ```cpp
 // embedded_tracer/buffer_tracer.h
 
-using TimestampFn = uint32_t (*)();
-
 class BufferTracer final : public ITracer {
 public:
+    static constexpr size_t MAX_SCOPE_NAMES = 64;
+
     /// Construct with a caller-provided buffer and timestamp function.
     /// The buffer is NOT owned — caller manages its lifetime.
     BufferTracer(uint8_t* buffer, size_t size, TimestampFn timestamp_fn);
 
     ScopeGuard scope(const char* name) override;
     void counter(const char* name, int64_t value) override;
+    void flow_start(const char* name, FlowId id) override;
+    void flow_step(const char* name, FlowId id) override;
+    void flow_end(const char* name, FlowId id) override;
 
-    /// Drain the buffer contents. Calls the visitor for each event.
-    /// Emits the scope ID → name mapping table first, then events.
-    void drain(EventVisitor& visitor);
+    /// Drain the buffer, calling the visitor for each stored event.
+    void drain(DrainCallback callback, void* context) const;
 
-    /// Number of events currently in the buffer.
     size_t event_count() const;
-
-    /// True if events were lost due to buffer overflow.
     bool overflowed() const;
-
-    /// Reset the buffer, discarding all events.
     void reset();
 };
 ```
@@ -245,15 +261,15 @@ public:
 |-------|------|-------------|
 | `timestamp_us` | 4 bytes | From `TimestampFn`, truncated to uint32 (~71 min before wrap) |
 | `scope_id` | 2 bytes | Auto-assigned ID for each unique scope name |
-| `event_type` | 1 byte | 0=scope_enter, 1=scope_exit, 2=counter |
-| `payload` | 0-8 bytes | Counter value (for type=2) |
+| `event_type` | 1 byte | 0=scope_enter, 1=scope_exit, 2=counter, 3-5=flow events |
+| `payload` | 0-8 bytes | Counter value (type=2, 8B) or FlowId (type=3-5, 2B) |
 
 ~7-15 bytes per event. An 8KB buffer holds ~500-1000 events.
 
 The scope ID → name mapping is maintained as a compact table (array of
-`const char*` pointers). Scope names must be string literals (pointer
-stability guaranteed). The mapping table is emitted at drain time so the
-host can decode scope IDs back to names.
+`const char*` pointers, up to 64 entries). Scope names must be string
+literals (pointer stability guaranteed). The mapping is used at drain
+time to resolve scope IDs back to names.
 
 ### SerialTracer (ESP32)
 
@@ -263,10 +279,18 @@ host can decode scope IDs back to names.
 class SerialTracer final : public ITracer {
 public:
     /// Construct with a Print output (e.g. Serial).
-    explicit SerialTracer(Print& output);
+    /// @param output       Print stream (e.g. Serial)
+    /// @param timestamp_fn Microsecond timestamp source
+    /// @param pid          Process ID for Chrome JSON (default 1)
+    /// @param tid_fn       Thread ID function (default returns 1)
+    SerialTracer(Print& output, TimestampFn timestamp_fn,
+                 ProcessId pid = 1, ThreadIdFn tid_fn = nullptr);
 
     ScopeGuard scope(const char* name) override;
     void counter(const char* name, int64_t value) override;
+    void flow_start(const char* name, FlowId id) override;
+    void flow_step(const char* name, FlowId id) override;
+    void flow_end(const char* name, FlowId id) override;
 };
 ```
 
@@ -275,17 +299,22 @@ Emits one Chrome JSON event per line:
 ```json
 {"ph":"B","ts":1234,"name":"gps_fix","pid":1,"tid":2}
 {"ph":"E","ts":5678,"name":"gps_fix","pid":1,"tid":2}
-{"ph":"C","ts":5678,"name":"heap","pid":1,"args":{"free":102400}}
+{"ph":"C","ts":5678,"name":"heap","pid":1,"tid":2,"args":{"value":102400}}
+{"ph":"s","ts":1001,"name":"notecard_req","id":42,"pid":1,"tid":2}
+{"ph":"f","ts":1200,"name":"notecard_req","id":42,"pid":1,"tid":1}
 ```
 
-- `ts` — microseconds from `esp_timer_get_time()`
+- `ts` — microseconds from the injected timestamp function
 - `pid` — process ID (1 by default, configurable for grouping)
-- `tid` — FreeRTOS task handle cast to int (each task = swim lane in Perfetto)
+- `tid` — from the injected thread ID function (e.g. FreeRTOS task handle)
 - `ph:"B"` / `"E"` — scope begin/end
 - `ph:"C"` — counter sample
+- `ph:"s"` / `"t"` / `"f"` — flow start/step/end (cross-thread causal links)
 
 Output is directly loadable in [Perfetto UI](https://ui.perfetto.dev) when
-wrapped in `{"traceEvents":[...]}` by the host collector.
+wrapped in `{"traceEvents":[...]}` by the host collector. Host-side consumers
+(embedded-bridge EventCapture, ppk2-python EventMapper) parse these same
+Chrome JSON lines directly.
 
 ### GPIOTracer (ESP32)
 
@@ -322,16 +351,25 @@ alignment between scope boundaries and power data.
 
 class CompositeTracer final : public ITracer {
 public:
-    /// Construct with up to N child tracers.
-    CompositeTracer(std::initializer_list<ITracer*> tracers);
+    static constexpr size_t MAX_CHILDREN = 4;
+
+    /// Construct with an array of child tracers.
+    CompositeTracer(ITracer** tracers, size_t count);
 
     ScopeGuard scope(const char* name) override;
     void counter(const char* name, int64_t value) override;
+    void flow_start(const char* name, FlowId id) override;
+    void flow_step(const char* name, FlowId id) override;
+    void flow_end(const char* name, FlowId id) override;
 };
 ```
 
-Delegates to all children. Typical use: `SerialTracer` for scope naming +
-`GPIOTracer` for precise timing alignment with PPK2.
+Delegates all operations to all children. Manages child ScopeGuards
+internally — each `scope()` call stores up to `MAX_CHILDREN` child
+guards on an internal stack (up to 8 levels of nesting).
+
+Typical use: `SerialTracer` for real-time output + `BufferTracer` for
+high-precision post-hoc capture.
 
 ---
 
@@ -405,22 +443,14 @@ sends:
 The host converts this to Chrome JSON. The binary protocol is defined in
 `buffer_tracer.h` and documented separately once implemented.
 
-### Event markers (PPK2 compatibility)
+### Host-side consumers
 
-For backward compatibility with ppk2-python's existing `EventMapper`, the
-SerialTracer can optionally emit PPK2-style event markers alongside Chrome
-JSON:
+The Chrome JSON output serves multiple host-side consumers from the same
+serial stream:
 
-```
-T=0.001600 GPS_FIX_STARTED
-{"ph":"B","ts":1600,"pid":1,"tid":2,"name":"gps_fix"}
-T=0.004200 GPS_FIX_STOPPED
-{"ph":"E","ts":4200,"pid":1,"tid":2,"name":"gps_fix"}
-```
-
-This allows the same serial output to feed both the Chrome Trace collector
-and the PPK2 EventMapper channel encoding. Controlled by a configuration
-flag at construction.
+- **Perfetto UI** — wrap lines in `{"traceEvents":[...]}` for visualization
+- **embedded-bridge EventCapture** — parses `ph:"B"/"E"` lines into spans
+- **ppk2-python EventMapper** — maps scope events to PPK2 digital channels
 
 ---
 
@@ -585,16 +615,12 @@ CHECK(test_tracer.event_count() == 2);  // enter + exit
 
 ---
 
-## Future: Cross-Thread Causal Profiling
+## Cross-Thread Causal Profiling
 
-The current scope model is single-threaded: a scope opens and closes on the
-same thread, and nesting is implicit via the call stack. This works well for
-power profiling (which peripheral is active?) and simple timing (how long did
-this operation take?).
-
-However, real firmware has **shared service threads** (e.g. notecardIO queue,
-SPI bus manager) that serve requests from multiple concurrent actions. Profiling
-these requires two views:
+Scopes open and close on the same thread. But real firmware has **shared
+service threads** (e.g. notecardIO queue, SPI bus manager) that serve
+requests from multiple concurrent actions. Flow events link work across
+thread boundaries. Profiling these requires two views:
 
 - **Vertical (action-centric):** "What did `sync_gps_fix` cost end-to-end?"
   Follow the causal chain from trigger to completion, across thread boundaries.
@@ -633,21 +659,16 @@ TRACE_SCOPE(tracer, "notecard_transaction")
   // ... J-request, wait for response ...
 ```
 
-### Serial protocol extension
+### Chrome JSON flow events
 
-```
-T=1.000 GPS_SYNC_STARTED          tid=2
-T=1.001 NOTECARD_REQ_STARTED      tid=2  flow_id=42
-T=1.050 NOTECARD_REQ_STARTED      tid=1  flow_id=42
-T=1.200 NOTECARD_REQ_STOPPED      tid=1
-T=1.210 GPS_SYNC_STOPPED          tid=2
-```
-
-Chrome JSON already supports flow events natively:
+SerialTracer emits flow events as Chrome JSON:
 ```json
 {"ph":"s","ts":1001,"name":"notecard_req","id":42,"pid":1,"tid":2}
-{"ph":"f","ts":1050,"name":"notecard_req","id":42,"pid":1,"tid":1}
+{"ph":"t","ts":1050,"name":"notecard_req","id":42,"pid":1,"tid":1}
+{"ph":"f","ts":1200,"name":"notecard_req","id":42,"pid":1,"tid":1}
 ```
+
+BufferTracer stores flow events as event_type 3/4/5 with a 2-byte FlowId payload.
 
 ### Host-side analysis
 
@@ -662,16 +683,13 @@ The host (embedded-bridge) would extend EventCapture with a `Flow` type:
 
 ### Implementation notes
 
-- Flow IDs can be simple incrementing counters (uint16 wrapping is fine —
+- Flow IDs are simple incrementing `uint16_t` counters (wrapping is fine —
   flows are short-lived relative to the counter space).
-- The `ITracer` interface would gain `flow_start(name, id)`,
-  `flow_step(name, id)`, `flow_end(name, id)`.
-- NullTracer's flow methods are no-ops. BufferTracer stores flow events in
-  the ring buffer (same 7-byte format, new event_type values).
-- This is **not needed for Phase 1 power profiling** — peripheral-level
-  START/STOP is sufficient. Flow events become important when profiling
-  multi-threaded application logic (e.g. "what's the total cost of a
-  Notehub sync cycle?").
+- `ITracer` provides `flow_start(name, id)`, `flow_step(name, id)`,
+  `flow_end(name, id)` with default no-op implementations.
+- NullTracer inherits the no-ops. SerialTracer emits Chrome JSON.
+  BufferTracer stores flow events in the ring buffer (event_type 3/4/5
+  with 2-byte FlowId payload).
 
 ---
 

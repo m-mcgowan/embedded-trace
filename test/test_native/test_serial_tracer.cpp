@@ -91,28 +91,10 @@ TEST_CASE("SerialTracer: nested scopes produce correct order") {
     CHECK(pos_e_inner < pos_e_outer);
 }
 
-// ── SerialTracer: PPK2 event markers ─────────────────────────────
-
-TEST_CASE("SerialTracer: ppk2_markers emits T= lines") {
-    StringPrint out;
-    mock_time = 1600;
-    SerialTracer tracer(out, mock_timestamp, true);
-
-    {
-        auto guard = tracer.scope("gps_fix");
-        CHECK(out.contains("T=0.001600 GPS_FIX_STARTED"));
-        CHECK(out.contains("\"ph\":\"B\""));
-        out.clear();
-        mock_time = 4200;
-    }
-    CHECK(out.contains("T=0.004200 GPS_FIX_STOPPED"));
-    CHECK(out.contains("\"ph\":\"E\""));
-}
-
-TEST_CASE("SerialTracer: ppk2_markers=false omits T= lines") {
+TEST_CASE("SerialTracer: no T= markers in output") {
     StringPrint out;
     mock_time = 1000;
-    SerialTracer tracer(out, mock_timestamp, false);
+    SerialTracer tracer(out, mock_timestamp);
 
     {
         auto guard = tracer.scope("test");
@@ -126,10 +108,83 @@ TEST_CASE("SerialTracer: ppk2_markers=false omits T= lines") {
 TEST_CASE("SerialTracer: pid is configurable") {
     StringPrint out;
     mock_time = 0;
-    SerialTracer tracer(out, mock_timestamp, false, 42);
+    SerialTracer tracer(out, mock_timestamp, 42);
 
     auto guard = tracer.scope("test");
     CHECK(out.contains("\"pid\":42"));
+}
+
+// ── SerialTracer: thread ID ─────────────────────────────────────────
+
+static ThreadId mock_tid_value = 0;
+static ThreadId mock_tid() { return mock_tid_value; }
+
+TEST_CASE("SerialTracer: default tid is 1") {
+    StringPrint out;
+    mock_time = 0;
+    SerialTracer tracer(out, mock_timestamp);
+
+    auto guard = tracer.scope("test");
+    CHECK(out.contains("\"tid\":1"));
+}
+
+TEST_CASE("SerialTracer: tid from custom function") {
+    StringPrint out;
+    mock_time = 0;
+    mock_tid_value = 7;
+    SerialTracer tracer(out, mock_timestamp, 1, mock_tid);
+
+    auto guard = tracer.scope("test");
+    CHECK(out.contains("\"tid\":7"));
+}
+
+TEST_CASE("SerialTracer: tid in counter events") {
+    StringPrint out;
+    mock_time = 0;
+    mock_tid_value = 3;
+    SerialTracer tracer(out, mock_timestamp, 1, mock_tid);
+
+    tracer.counter("heap", 1024);
+    CHECK(out.contains("\"tid\":3"));
+}
+
+// ── SerialTracer: flow events ───────────────────────────────────────
+
+TEST_CASE("SerialTracer: flow_start emits ph:s with id") {
+    StringPrint out;
+    mock_time = 1000;
+    mock_tid_value = 2;
+    SerialTracer tracer(out, mock_timestamp, 1, mock_tid);
+
+    tracer.flow_start("notecard_req", 42);
+    CHECK(out.contains("\"ph\":\"s\""));
+    CHECK(out.contains("\"name\":\"notecard_req\""));
+    CHECK(out.contains("\"id\":42"));
+    CHECK(out.contains("\"tid\":2"));
+    CHECK(out.contains("\"ts\":1000"));
+}
+
+TEST_CASE("SerialTracer: flow_step emits ph:t") {
+    StringPrint out;
+    mock_time = 2000;
+    mock_tid_value = 1;
+    SerialTracer tracer(out, mock_timestamp, 1, mock_tid);
+
+    tracer.flow_step("notecard_req", 42);
+    CHECK(out.contains("\"ph\":\"t\""));
+    CHECK(out.contains("\"id\":42"));
+    CHECK(out.contains("\"tid\":1"));
+}
+
+TEST_CASE("SerialTracer: flow_end emits ph:f") {
+    StringPrint out;
+    mock_time = 3000;
+    mock_tid_value = 1;
+    SerialTracer tracer(out, mock_timestamp, 1, mock_tid);
+
+    tracer.flow_end("notecard_req", 42);
+    CHECK(out.contains("\"ph\":\"f\""));
+    CHECK(out.contains("\"id\":42"));
 }
 
 } // namespace et

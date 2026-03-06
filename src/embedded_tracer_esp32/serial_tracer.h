@@ -21,10 +21,6 @@ namespace et {
  * Counters emit:
  *   {"ph":"C","ts":5678,"name":"heap","pid":1,"args":{"value":102400}}
  *
- * When ppk2_markers is true, also emits T= event markers:
- *   T=0.001234 GPS_FIX_STARTED
- *   T=0.005678 GPS_FIX_STOPPED
- *
  * Output is directly loadable in Perfetto UI when wrapped by the host
  * in {"traceEvents":[...]}.
  */
@@ -33,20 +29,23 @@ public:
     /**
      * @param output       Print stream (e.g. Serial)
      * @param timestamp_fn Microsecond timestamp source
-     * @param ppk2_markers If true, emit T= event markers alongside JSON
      * @param pid          Process ID for Chrome JSON (default 1)
+     * @param tid_fn       Thread ID function (default returns 1)
      */
     SerialTracer(Print& output, TimestampFn timestamp_fn,
-                 bool ppk2_markers = false, ProcessId pid = 1);
+                 ProcessId pid = 1, ThreadIdFn tid_fn = nullptr);
 
     ScopeGuard scope(const char* name) override;
     void counter(const char* name, int64_t value) override;
+    void flow_start(const char* name, FlowId id) override;
+    void flow_step(const char* name, FlowId id) override;
+    void flow_end(const char* name, FlowId id) override;
 
 private:
     Print& output_;
     TimestampFn timestamp_fn_;
-    bool ppk2_markers_;
     ProcessId pid_;
+    ThreadIdFn tid_fn_;
 
     void emit_begin(const char* name);
     void emit_end(const char* name, ScopeId scope_id);

@@ -1,0 +1,51 @@
+#pragma once
+
+#include "i_tracer.h"
+#include <cstddef>
+
+namespace et {
+
+/**
+ * @brief Multiplexer tracer — delegates to up to 4 child tracers.
+ *
+ * Typical use: SerialTracer for scope naming + BufferTracer for
+ * high-precision capture, or any combination of tracer implementations.
+ *
+ * Each child's scope() returns its own ScopeGuard. CompositeTracer
+ * stores these internally and releases them all when the composite
+ * guard is destroyed.
+ */
+class CompositeTracer final : public ITracer {
+public:
+    static constexpr size_t MAX_CHILDREN = 4;
+
+    /// Construct with an array of child tracers.
+    CompositeTracer(ITracer** tracers, size_t count);
+
+    ScopeGuard scope(const char* name) override;
+    void counter(const char* name, int64_t value) override;
+    void flow_start(const char* name, FlowId id) override;
+    void flow_step(const char* name, FlowId id) override;
+    void flow_end(const char* name, FlowId id) override;
+
+private:
+    ITracer* children_[MAX_CHILDREN];
+    size_t child_count_;
+
+    // Storage for child scope guards (one set per active composite scope).
+    // For simplicity, supports one active scope at a time via the callback.
+    // Nested scopes work because each ScopeGuard captures its own exit data.
+    struct ScopeState {
+        ScopeGuard guards[MAX_CHILDREN];
+        size_t count;
+    };
+
+    // We use a small stack of scope states for nesting
+    static constexpr size_t MAX_NESTING = 8;
+    ScopeState scope_stack_[MAX_NESTING];
+    size_t stack_depth_;
+
+    static void scope_exit_callback(void* context, const char* name, ScopeId scope_id);
+};
+
+} // namespace et
