@@ -708,3 +708,15 @@ The host (embedded-bridge) would extend EventCapture with a `Flow` type:
 
 Ring buffer for BufferTracer is caller-provided — can be in PSRAM on ESP32
 for larger captures without consuming main RAM.
+
+---
+
+## Planned ESP32 Extensions
+
+The `embedded_tracer_esp32/` directory provides ESP32-specific tracer
+implementations. Currently only `SerialTracer` exists. Planned additions:
+
+| Extension | Description | Status |
+|-----------|-------------|--------|
+| **HeapTracer** | Per-scope heap delta attribution using ESP-IDF `heap_trace_*` APIs. Snapshots `esp_get_free_heap_size()` on scope entry/exit, emits counter events for deltas, optionally dumps allocation traces when leaks exceed threshold. See [heap_metric_layer.md](heap_metric_layer.md). | Design complete |
+| **GPIOTracer** | Toggle GPIO pins on scope entry/exit for oscilloscope/logic analyzer correlation. Mentioned in architecture diagram above. | Planned |
