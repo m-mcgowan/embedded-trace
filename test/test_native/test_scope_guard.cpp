@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
-#include <embedded_tracer/scope_guard.h>
-#include <embedded_tracer/null_tracer.h>
-#include <embedded_tracer/i_tracer.h>
+#include <embedded_trace/scope_guard.h>
+#include <embedded_trace/null_tracer.h>
+#include <embedded_trace/i_tracer.h>
 
 namespace et {
 

@@ -3,7 +3,7 @@
 /**
  * @brief Zero-cost trace macros.
  *
- * When EMBEDDED_TRACER_ENABLED is 0 or undefined, both macros compile
+ * When EMBEDDED_TRACE_ENABLED is 0 or undefined, both macros compile
  * to nothing — zero code size, zero RAM, zero CPU.
  */
 
@@ -11,7 +11,7 @@
 #define ET_CONCAT_(a, b) a##b
 #define ET_CONCAT(a, b) ET_CONCAT_(a, b)
 
-#if EMBEDDED_TRACER_ENABLED
+#if EMBEDDED_TRACE_ENABLED
   #define TRACE_SCOPE(tracer, name) \
       auto ET_CONCAT(_et_scope_, __LINE__) = (tracer).scope(name)
   #define TRACE_COUNTER(tracer, name, val) \

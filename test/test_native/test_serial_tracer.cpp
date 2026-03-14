@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
-#include <embedded_tracer/native_print.h>
-#include <embedded_tracer_esp32/serial_tracer.h>
+#include <embedded_trace/native_print.h>
+#include <embedded_trace_esp32/serial_tracer.h>
 #include <string>
 
 namespace et {

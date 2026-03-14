@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include <embedded_tracer/buffer_tracer.h>
+#include <embedded_trace/buffer_tracer.h>
 #include <vector>
 
 namespace et {

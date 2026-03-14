@@ -1,6 +1,6 @@
 # Heap Metric Layer — ESP32 Extension
 
-An ESP32-specific metric layer for embedded-tracer that provides per-scope heap
+An ESP32-specific metric layer for embedded-trace that provides per-scope heap
 attribution. Uses ESP-IDF's `heap_trace_*` standalone APIs to track allocations
 within named scopes, integrating with the existing scope tree.
 
@@ -36,7 +36,7 @@ with a single consistent mechanism.
 
 ## Design
 
-### `HeapTracer` class — `embedded_tracer_esp32/heap_tracer.h`
+### `HeapTracer` class — `embedded_trace_esp32/heap_tracer.h`
 
 ```cpp
 namespace et {
@@ -173,7 +173,7 @@ struct ScopedHeapTrace {
 
 ## Implementation plan
 
-1. Add `heap_tracer.h` and `heap_tracer.cpp` to `src/embedded_tracer_esp32/`
+1. Add `heap_tracer.h` and `heap_tracer.cpp` to `src/embedded_trace_esp32/`
 2. Add `ScopedHeapTrace` to same directory (header-only)
 3. Native tests: mock `esp_get_free_heap_size()` and `heap_trace_*` for unit testing
 4. Integration test: use in `test_binary_capture_manager.cpp` to replace existing

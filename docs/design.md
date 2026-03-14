@@ -1,4 +1,4 @@
-# embedded-tracer — Design
+# embedded-trace — Design
 
 A lightweight, hierarchical scope-tracing library for embedded systems.
 Designed for ESP32/FreeRTOS as a first target, with a platform-agnostic core
@@ -22,7 +22,7 @@ structure.
 
 ### The solution
 
-embedded-tracer provides a **scope tree** as the backbone of instrumentation.
+embedded-trace provides a **scope tree** as the backbone of instrumentation.
 Every significant operation is a named scope with RAII entry/exit tracking.
 The scope tree is the single structure onto which multiple independent
 **metric layers** (power, memory, timing, data usage) can be pinned — either
@@ -118,7 +118,7 @@ source directory, same `ITracer` interface.
 ### ITracer
 
 ```cpp
-// embedded_tracer/i_tracer.h
+// embedded_trace/i_tracer.h
 
 class ITracer {
 public:
@@ -148,7 +148,7 @@ public:
 ### ScopeGuard
 
 ```cpp
-// embedded_tracer/scope_guard.h
+// embedded_trace/scope_guard.h
 
 class ScopeGuard {
 public:
@@ -174,9 +174,9 @@ private:
 ### Macros
 
 ```cpp
-// embedded_tracer/trace_macros.h
+// embedded_trace/trace_macros.h
 
-#if EMBEDDED_TRACER_ENABLED
+#if EMBEDDED_TRACE_ENABLED
   #define TRACE_SCOPE(tracer, name) \
       auto ET_CONCAT(_et_scope_, __LINE__) = (tracer).scope(name)
   #define TRACE_COUNTER(tracer, name, val) \
@@ -196,7 +196,7 @@ private:
 #endif
 ```
 
-When `EMBEDDED_TRACER_ENABLED` is 0 or undefined, all tracing compiles to
+When `EMBEDDED_TRACE_ENABLED` is 0 or undefined, all tracing compiles to
 nothing — zero code size, zero RAM, zero CPU.
 
 ---
@@ -206,7 +206,7 @@ nothing — zero code size, zero RAM, zero CPU.
 ### NullTracer
 
 ```cpp
-// embedded_tracer/null_tracer.h
+// embedded_trace/null_tracer.h
 
 class NullTracer final : public ITracer {
 public:
@@ -230,7 +230,7 @@ so it works on any platform. Stores events in a compact binary format for
 post-hoc capture where serial output would perturb timing.
 
 ```cpp
-// embedded_tracer/buffer_tracer.h
+// embedded_trace/buffer_tracer.h
 
 class BufferTracer final : public ITracer {
 public:
@@ -274,7 +274,7 @@ time to resolve scope IDs back to names.
 ### SerialTracer (ESP32)
 
 ```cpp
-// embedded_tracer_esp32/serial_tracer.h
+// embedded_trace_esp32/serial_tracer.h
 
 class SerialTracer final : public ITracer {
 public:
@@ -319,7 +319,7 @@ Chrome JSON lines directly.
 ### GPIOTracer (ESP32)
 
 ```cpp
-// embedded_tracer_esp32/gpio_tracer.h
+// embedded_trace_esp32/gpio_tracer.h
 
 struct GPIOScopeMapping {
     const char* name;   // scope name to match
@@ -347,7 +347,7 @@ alignment between scope boundaries and power data.
 ### CompositeTracer
 
 ```cpp
-// embedded_tracer/composite_tracer.h
+// embedded_trace/composite_tracer.h
 
 class CompositeTracer final : public ITracer {
 public:
@@ -375,7 +375,7 @@ high-precision post-hoc capture.
 
 ## Chrome Trace Format Reference
 
-embedded-tracer targets the
+embedded-trace targets the
 [Chrome JSON Trace Format](https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview)
 for output. This format is natively supported by
 [Perfetto UI](https://ui.perfetto.dev) and `chrome://tracing`.
@@ -457,7 +457,7 @@ serial stream:
 ## Project Structure
 
 ```
-embedded-tracer/
+embedded-trace/
 ├── library.json                    # PlatformIO library metadata
 ├── platformio.ini                  # native + esp32s3 build/test environments
 ├── LICENSE
@@ -465,7 +465,7 @@ embedded-tracer/
 ├── docs/
 │   └── design.md                   # this file
 ├── src/
-│   ├── embedded_tracer/            # core (platform-agnostic, C++17)
+│   ├── embedded_trace/            # core (platform-agnostic, C++17)
 │   │   ├── i_tracer.h
 │   │   ├── scope_guard.h
 │   │   ├── scope_guard.cpp
@@ -475,7 +475,7 @@ embedded-tracer/
 │   │   ├── composite_tracer.h
 │   │   ├── composite_tracer.cpp
 │   │   └── trace_macros.h
-│   └── embedded_tracer_esp32/      # ESP32 bindings
+│   └── embedded_trace_esp32/      # ESP32 bindings
 │       ├── serial_tracer.h
 │       ├── serial_tracer.cpp
 │       ├── gpio_tracer.h
@@ -509,7 +509,7 @@ embedded-tracer/
 
 ```json
 {
-    "name": "embedded-tracer",
+    "name": "embedded-trace",
     "version": "0.1.0",
     "description": "Lightweight hierarchical scope tracing for embedded systems with Perfetto output",
     "keywords": ["tracer", "profiling", "perfetto", "instrumentation", "embedded", "esp32"],
@@ -517,14 +517,14 @@ embedded-tracer/
     "frameworks": ["arduino", "espidf"],
     "build": {
         "srcFilter": [
-            "+<embedded_tracer/>",
-            "+<embedded_tracer_esp32/>"
+            "+<embedded_trace/>",
+            "+<embedded_trace_esp32/>"
         ]
     }
 }
 ```
 
-The `srcFilter` for native builds excludes `embedded_tracer_esp32/` via
+The `srcFilter` for native builds excludes `embedded_trace_esp32/` via
 the platformio.ini environment config, so the core compiles without ESP-IDF.
 
 ---
@@ -534,8 +534,8 @@ the platformio.ini environment config, so the core compiles without ESP-IDF.
 ### Basic (any platform)
 
 ```cpp
-#include <embedded_tracer/null_tracer.h>
-#include <embedded_tracer/trace_macros.h>
+#include <embedded_trace/null_tracer.h>
+#include <embedded_trace/trace_macros.h>
 
 void do_work(ITracer& tracer) {
     TRACE_SCOPE(tracer, "work");
@@ -560,10 +560,10 @@ do_work(tracer);
 ### ESP32 with Perfetto output
 
 ```cpp
-#include <embedded_tracer_esp32/serial_tracer.h>
-#include <embedded_tracer_esp32/gpio_tracer.h>
-#include <embedded_tracer/composite_tracer.h>
-#include <embedded_tracer/trace_macros.h>
+#include <embedded_trace_esp32/serial_tracer.h>
+#include <embedded_trace_esp32/gpio_tracer.h>
+#include <embedded_trace/composite_tracer.h>
+#include <embedded_trace/trace_macros.h>
 
 // Serial for naming, GPIO for PPK2 alignment
 SerialTracer serial_tracer(Serial);
@@ -713,7 +713,7 @@ for larger captures without consuming main RAM.
 
 ## Planned ESP32 Extensions
 
-The `embedded_tracer_esp32/` directory provides ESP32-specific tracer
+The `embedded_trace_esp32/` directory provides ESP32-specific tracer
 implementations. Currently only `SerialTracer` exists. Planned additions:
 
 | Extension | Description | Status |

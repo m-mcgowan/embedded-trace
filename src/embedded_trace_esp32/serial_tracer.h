@@ -1,12 +1,12 @@
 #pragma once
 
-#include "../embedded_tracer/i_tracer.h"
-#include "../embedded_tracer/types.h"
+#include "../embedded_trace/i_tracer.h"
+#include "../embedded_trace/types.h"
 
 #ifdef ARDUINO
 #include <Print.h>
 #else
-#include "../embedded_tracer/native_print.h"
+#include "../embedded_trace/native_print.h"
 #endif
 
 namespace et {
