@@ -1,4 +1,4 @@
-# embedded-tracer
+# embedded-trace
 
 Lightweight, hierarchical scope-tracing library for embedded systems. Designed for ESP32/FreeRTOS as a first target, with a platform-agnostic core that compiles on any C++17 host.
 
