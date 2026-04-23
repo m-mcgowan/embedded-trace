@@ -660,7 +660,17 @@ void app_main() {
 Collect serial output, wrap in `{"traceEvents":[...]}`, open in
 [ui.perfetto.dev](https://ui.perfetto.dev).
 
-### Injecting into services
+### Tracer ownership
+
+`TRACE_SCOPE` requires a tracer reference at every call site. Three
+patterns work — pick per project, the library doesn't ship sugar for
+any of them.
+
+#### 1. Injected (recommended for new code)
+
+Each service takes `ITracer&` in its constructor. Tests pass a
+`BufferTracer`; production passes the real one. Default to
+`NullTracer::instance()` so callers can opt out without ceremony.
 
 ```cpp
 class SensorService {
@@ -675,12 +685,71 @@ public:
     }
 };
 
-// Test: verify scopes are emitted
+// Test
 BufferTracer test_tracer(buf, sizeof(buf), mock_timestamp);
 SensorService service(test_tracer);
 service.read();
-CHECK(test_tracer.event_count() == 2);  // enter + exit
+CHECK(test_tracer.event_count() == 2);
 ```
+
+**Catch:** every service constructor grows an `ITracer&` parameter.
+Painful to retrofit into an existing codebase.
+
+#### 2. User-declared global reference (good for retrofitting)
+
+When you're adding tracing to existing code and don't want to touch 30
+function signatures, declare one reference in a header and define it
+at boot. Two lines of user code; no library API needed.
+
+```cpp
+// app/tracing.h
+namespace app { extern et::ITracer& tracer; }
+
+// app/main.cpp
+static et::SerialTracer s_tracer(Serial, micros);
+namespace app { et::ITracer& tracer = s_tracer; }
+
+// anywhere in the app
+#include "tracing.h"
+void do_thing() {
+    TRACE_SCOPE(app::tracer, "do_thing");
+}
+```
+
+**Catch:** mutating it for tests means swapping the binding (or
+declaring it `et::ITracer*` and pointing it at a test tracer). One
+tracer per binary by construction.
+
+#### 3. Per-task storage on FreeRTOS (multi-tracer setups)
+
+When different FreeRTOS tasks need different tracers — e.g. each task
+owns a private `BufferTracer` to avoid Serial contention, drained
+independently — use FreeRTOS task-local storage pointers. Avoid
+C++ `thread_local` on ESP-IDF: it's emulated via libstdc++ emutls,
+which lazily allocates on first access per task and has been observed
+to overflow the idle task's ~1 KB stack.
+
+```cpp
+// One slot, claimed for embedded-trace at compile time.
+static constexpr UBaseType_t ET_TLS_SLOT = 0;
+// sdkconfig: CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS >= ET_TLS_SLOT + 1
+
+inline et::ITracer& current_tracer() {
+    auto* p = pvTaskGetThreadLocalStoragePointer(nullptr, ET_TLS_SLOT);
+    return p ? *static_cast<et::ITracer*>(p) : et::NullTracer::instance();
+}
+
+// Each task, once at startup
+void sensor_task(void*) {
+    static et::BufferTracer my_tracer{...};
+    vTaskSetThreadLocalStoragePointer(nullptr, ET_TLS_SLOT, &my_tracer);
+    // ... TRACE_SCOPE(current_tracer(), "...") henceforth ...
+}
+```
+
+**Catch:** ESP-IDF-specific; consumers must bump
+`CONFIG_FREERTOS_THREAD_LOCAL_STORAGE_POINTERS`; slot index has to be
+coordinated with any other libraries claiming TLS slots.
 
 ---
 

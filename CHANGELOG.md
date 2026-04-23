@@ -15,6 +15,9 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - examples/esp32_perfetto — ESP32-S3 Arduino app emitting Chrome JSON over USB Serial, with two FreeRTOS tasks demonstrating one-Perfetto-lane-per-task via the new esp_idf_tid_fn default.
 - README quickstart — install instructions, copy-paste-runnable code sample, and Chrome JSON output preview, replacing the previous status-table-only README.
 - Build-time #warning when SerialTracer / BufferTracer / CompositeTracer headers are included without -DEMBEDDED_TRACE_ENABLED=1, catching the silent-no-op-macro footgun at compile time.
+
+### Documentation
+- design.md "Tracer ownership" section: three patterns (injected, user-declared global reference, FreeRTOS task-local storage) with their catches. Library ships no global / TLS helper — each pattern is user-side. Notes the C++ thread_local emutls hazard on ESP-IDF (idle task stack overflow) and points at vTaskSetThreadLocalStoragePointer instead.
 - NullTracer — zero-cost no-op tracer for production builds
 - SerialTracer — ESP32 serial tracer emitting Chrome Trace Event JSON
 - Trace macros (TRACE_SCOPE, TRACE_COUNTER) for convenient instrumentation
