@@ -13,6 +13,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - ITracer::set_process_name() / set_thread_name() — emit Chrome ph:M metadata events. SerialTracer renders them as JSON; CompositeTracer forwards to all children; NullTracer/BufferTracer no-op (default).
 - examples/basic_scopes — host-runnable native example exercising scope nesting, counters, and metadata events with SerialTracer to stdout.
 - examples/esp32_perfetto — ESP32-S3 Arduino app emitting Chrome JSON over USB Serial, with two FreeRTOS tasks demonstrating one-Perfetto-lane-per-task via the new esp_idf_tid_fn default.
+- README quickstart — install instructions, copy-paste-runnable code sample, and Chrome JSON output preview, replacing the previous status-table-only README.
+- Build-time #warning when SerialTracer / BufferTracer / CompositeTracer headers are included without -DEMBEDDED_TRACE_ENABLED=1, catching the silent-no-op-macro footgun at compile time.
 - NullTracer — zero-cost no-op tracer for production builds
 - SerialTracer — ESP32 serial tracer emitting Chrome Trace Event JSON
 - Trace macros (TRACE_SCOPE, TRACE_COUNTER) for convenient instrumentation

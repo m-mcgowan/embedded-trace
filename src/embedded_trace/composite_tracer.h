@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined(EMBEDDED_TRACE_ENABLED) || EMBEDDED_TRACE_ENABLED == 0
+#warning "embedded-trace: CompositeTracer included but EMBEDDED_TRACE_ENABLED is not set — TRACE_SCOPE/TRACE_COUNTER will compile to no-ops. Add -DEMBEDDED_TRACE_ENABLED=1 to your build_flags."
+#endif
+
 #include "i_tracer.h"
 #include <cstddef>
 

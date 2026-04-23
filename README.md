@@ -1,8 +1,58 @@
 # embedded-trace
 
-Lightweight, hierarchical scope-tracing library for embedded systems. Designed for ESP32/FreeRTOS as a first target, with a platform-agnostic core that compiles on any C++17 host.
+Lightweight, hierarchical scope-tracing library for embedded systems. Emits Chrome Trace Event JSON (loadable in [Perfetto](https://ui.perfetto.dev)) from RAII-scoped instrumentation. Designed for ESP32/FreeRTOS as a first target, with a platform-agnostic core that compiles on any C++17 host.
 
-See [docs/design.md](docs/design.md) for architecture and design.
+## Quickstart
+
+```cpp
+#include <embedded_trace/trace_macros.h>
+#include <embedded_trace_esp32/serial_tracer.h>
+
+et::SerialTracer tracer(Serial, micros);  // micros() — your timestamp source
+
+void setup() {
+    Serial.begin(115200);
+    tracer.set_process_name("my_app");
+    tracer.set_thread_name(et::esp_idf_tid_fn(), "loopTask");
+}
+
+void loop() {
+    TRACE_SCOPE(tracer, "cycle");
+    {
+        TRACE_SCOPE(tracer, "work");
+        do_thing();
+    }
+    TRACE_COUNTER(tracer, "heap.free", ESP.getFreeHeap());
+    delay(100);
+}
+```
+
+Output is one Chrome JSON event per line on `Serial`:
+
+```json
+{"ph":"M","name":"process_name","pid":1,"args":{"name":"my_app"}}
+{"ph":"B","ts":1234,"name":"cycle","pid":1,"tid":1073553228}
+{"ph":"E","ts":2345,"name":"work","pid":1,"tid":1073553228}
+{"ph":"C","ts":2346,"name":"heap.free","pid":1,"tid":1073553228,"args":{"value":243000}}
+```
+
+Wrap captured lines as `{"traceEvents":[...]}` and load in [https://ui.perfetto.dev](https://ui.perfetto.dev).
+
+## Install
+
+PlatformIO:
+
+```ini
+lib_deps = https://github.com/m-mcgowan/embedded-trace.git
+build_flags = -DEMBEDDED_TRACE_ENABLED=1
+```
+
+Without `-DEMBEDDED_TRACE_ENABLED=1`, all `TRACE_*` macros compile to no-ops (zero code, zero RAM, zero CPU). The tracer headers emit a `#warning` if you include them with the flag off — a common first-time-user trip.
+
+## Examples
+
+- [`examples/basic_scopes/`](examples/basic_scopes/) — host-runnable native demo. `pio run -e basic_scopes -t exec`.
+- [`examples/esp32_perfetto/`](examples/esp32_perfetto/) — ESP32-S3 + multi-task Perfetto traces. `pio run -e esp32_perfetto -t upload`.
 
 ## Status
 
@@ -21,3 +71,7 @@ See [docs/design.md](docs/design.md) for architecture and design.
   Pop back above the scope before the no-return call, or hold the guard
   manually (`auto g = tracer.scope(...)`) and call `g.end()` before it.
   See [design.md — Scopes and no-return calls](docs/design.md#scopes-and-no-return-calls).
+
+## Further reading
+
+[`docs/design.md`](docs/design.md) — full architecture, threading model, BufferTracer + CompositeTracer, cross-thread causal profiling.
