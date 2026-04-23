@@ -11,6 +11,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - ScopeGuard::end() — explicit close for use before no-return calls (deep sleep, restart, abort)
 - esp_idf_tid_fn() helper — FreeRTOS task handle as ThreadId; SerialTracer uses it as the default tid_fn on ESP-IDF (one Perfetto lane per task instead of single-lane)
 - ITracer::set_process_name() / set_thread_name() — emit Chrome ph:M metadata events. SerialTracer renders them as JSON; CompositeTracer forwards to all children; NullTracer/BufferTracer no-op (default).
+- examples/basic_scopes — host-runnable native example exercising scope nesting, counters, and metadata events with SerialTracer to stdout.
+- examples/esp32_perfetto — ESP32-S3 Arduino app emitting Chrome JSON over USB Serial, with two FreeRTOS tasks demonstrating one-Perfetto-lane-per-task via the new esp_idf_tid_fn default.
 - NullTracer — zero-cost no-op tracer for production builds
 - SerialTracer — ESP32 serial tracer emitting Chrome Trace Event JSON
 - Trace macros (TRACE_SCOPE, TRACE_COUNTER) for convenient instrumentation
