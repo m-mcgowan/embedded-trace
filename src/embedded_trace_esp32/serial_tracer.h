@@ -30,7 +30,11 @@ public:
      * @param output       Print stream (e.g. Serial)
      * @param timestamp_fn Microsecond timestamp source
      * @param pid          Process ID for Chrome JSON (default 1)
-     * @param tid_fn       Thread ID function (default returns 1)
+     * @param tid_fn       Thread ID function. When null:
+     *                       - on ESP-IDF (ESP_PLATFORM): defaults to
+     *                         et::esp_idf_tid_fn (one Perfetto lane per
+     *                         FreeRTOS task)
+     *                       - elsewhere: defaults to constant 1
      */
     SerialTracer(Print& output, TimestampFn timestamp_fn,
                  ProcessId pid = 1, ThreadIdFn tid_fn = nullptr);

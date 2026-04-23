@@ -324,7 +324,9 @@ public:
     /// @param output       Print stream (e.g. Serial)
     /// @param timestamp_fn Microsecond timestamp source
     /// @param pid          Process ID for Chrome JSON (default 1)
-    /// @param tid_fn       Thread ID function (default returns 1)
+    /// @param tid_fn       Thread ID function. When null, defaults to
+    ///                     et::esp_idf_tid_fn on ESP-IDF (one Perfetto lane
+    ///                     per FreeRTOS task) or constant 1 elsewhere.
     SerialTracer(Print& output, TimestampFn timestamp_fn,
                  ProcessId pid = 1, ThreadIdFn tid_fn = nullptr);
 
@@ -348,7 +350,9 @@ Emits one Chrome JSON event per line:
 
 - `ts` — microseconds from the injected timestamp function
 - `pid` — process ID (1 by default, configurable for grouping)
-- `tid` — from the injected thread ID function (e.g. FreeRTOS task handle)
+- `tid` — from the injected thread ID function. On ESP-IDF defaults to
+  `et::esp_idf_tid_fn` (FreeRTOS task handle → one Perfetto lane per task);
+  elsewhere defaults to constant 1. Pass a custom `ThreadIdFn` to override.
 - `ph:"B"` / `"E"` — scope begin/end
 - `ph:"C"` — counter sample
 - `ph:"s"` / `"t"` / `"f"` — flow start/step/end (cross-thread causal links)
