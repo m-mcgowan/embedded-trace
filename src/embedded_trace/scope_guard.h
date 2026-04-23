@@ -23,6 +23,12 @@ public:
     ScopeGuard(void* context, ExitFn exit_fn, const char* name, ScopeId scope_id);
     ~ScopeGuard();
 
+    /// End the scope eagerly. Fires the exit callback once and disables the
+    /// destructor. Safe to call on a default-constructed or already-ended
+    /// guard (no-op). Use before a no-return call (e.g. esp_deep_sleep_start)
+    /// where the destructor would otherwise never run.
+    void end() noexcept;
+
     // Move-only
     ScopeGuard(ScopeGuard&& o) noexcept;
     ScopeGuard& operator=(ScopeGuard&&) noexcept;

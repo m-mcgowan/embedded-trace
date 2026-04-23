@@ -78,6 +78,51 @@ TEST_CASE("ScopeGuard: default constructor is no-op") {
     CHECK(exit_call_count == 0);
 }
 
+TEST_CASE("ScopeGuard: end() fires exit_fn and disables dtor") {
+    reset_counters();
+    {
+        ScopeGuard guard(nullptr, test_exit_fn, "manual", 99);
+        guard.end();
+        CHECK(exit_call_count == 1);
+        CHECK_EQ(last_exit_name, "manual");
+        CHECK_EQ(last_exit_id, 99);
+        // dtor must NOT fire again when guard goes out of scope
+    }
+    CHECK(exit_call_count == 1);
+}
+
+TEST_CASE("ScopeGuard: end() is idempotent") {
+    reset_counters();
+    ScopeGuard guard(nullptr, test_exit_fn, "twice", 5);
+    guard.end();
+    guard.end();
+    guard.end();
+    CHECK(exit_call_count == 1);
+}
+
+TEST_CASE("ScopeGuard: end() on default-constructed guard is no-op") {
+    reset_counters();
+    ScopeGuard guard;
+    guard.end();
+    CHECK(exit_call_count == 0);
+}
+
+TEST_CASE("ScopeGuard: end() then move-assign behaves correctly") {
+    reset_counters();
+    {
+        ScopeGuard g1(nullptr, test_exit_fn, "a", 1);
+        g1.end();
+        CHECK(exit_call_count == 1);
+        // g1 is now ended; move-assigning into it must not fire any exit
+        ScopeGuard g2(nullptr, test_exit_fn, "b", 2);
+        g1 = std::move(g2);
+        CHECK(exit_call_count == 1);  // no double-close of "a"
+    }
+    // "b" (now in g1) ends on dtor
+    CHECK(exit_call_count == 2);
+    CHECK_EQ(last_exit_name, "b");
+}
+
 // ── NullTracer tests ─────────────────────────────────────────────
 
 TEST_CASE("NullTracer: scope returns no-op guard") {

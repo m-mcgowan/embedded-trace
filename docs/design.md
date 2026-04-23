@@ -158,6 +158,11 @@ public:
     /// Destruct. Records scope-exit if tracer is non-null.
     ~ScopeGuard();
 
+    /// End the scope eagerly. Fires the exit event once and disables the
+    /// destructor. Safe to call repeatedly. Use before a no-return call
+    /// (deep sleep, restart, abort) where the destructor would never run.
+    void end() noexcept;
+
     // Move-only — scopes are not copyable.
     ScopeGuard(ScopeGuard&& o) noexcept;
     ScopeGuard& operator=(ScopeGuard&&) noexcept;
@@ -170,6 +175,43 @@ private:
     uint16_t scope_id_;
 };
 ```
+
+#### Scopes and no-return calls
+
+`TRACE_SCOPE` relies on the destructor firing as the enclosing function
+returns. Calls that never return — `esp_deep_sleep_start()`,
+`esp_restart()`, `abort()` — skip stack unwinding, so any live scope
+emits `B` with no matching `E`.
+
+**Preferred:** structure code so no live `TRACE_SCOPE` spans the
+no-return call. Pop back to a frame above the scope first:
+
+```cpp
+void run_wake_cycle() {
+    TRACE_SCOPE(tracer, "wake_cycle");
+    do_work();
+}                                  // ← E emitted here
+
+void main_loop() {
+    run_wake_cycle();              // all scopes unwound
+    esp_deep_sleep_start();        // safe — no live scopes
+}
+```
+
+**Escape hatch:** when refactoring isn't practical, hold the guard
+manually and call `end()` before the no-return:
+
+```cpp
+auto g = tracer.scope("wake_cycle");
+shutdown();
+g.end();                           // E emitted synchronously
+esp_deep_sleep_start();
+```
+
+Note this drops the `TRACE_SCOPE` macro — the macro mangles the
+variable name with `__LINE__` so the user can't reach `end()`. That's
+intentional: it steers users toward RAII. Manual close is the
+exception, not the norm.
 
 ### Macros
 
