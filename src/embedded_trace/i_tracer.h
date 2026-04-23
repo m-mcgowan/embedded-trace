@@ -28,15 +28,30 @@ public:
     /// on destruction. Scopes nest — the current scope becomes the
     /// parent of any scope opened before this one closes.
     ///
-    /// @note @p name MUST be a string literal (or otherwise have lifetime
-    ///       at least as long as the scope, with pointer stability).
-    ///       BufferTracer interns names by pointer equality for its
-    ///       scope_id table; passing `std::string::c_str()` or a stack
-    ///       buffer produces undefined behaviour. SerialTracer is more
-    ///       permissive — it copies the pointer's bytes immediately —
-    ///       but code written against SerialTracer must still use string
-    ///       literals to remain portable when a BufferTracer is added.
-    virtual ScopeGuard scope(const char* name) = 0;
+    /// Two calling forms:
+    ///   scope("notecard", "verify")   — explicit category + name
+    ///   scope("notecard.verify")      — single string; tracer auto-splits
+    ///                                    on the first '.' (Perfetto "cat"
+    ///                                    field). Use this form when
+    ///                                    retrofitting existing dotted names.
+    ///   scope("plain")                — no category (cat is null).
+    ///
+    /// @param cat_or_name When @p name is non-null, this is the category.
+    ///                    When @p name is null, this is the full scope
+    ///                    identifier (optionally dotted).
+    /// @param name        The scope name, when a category is passed
+    ///                    explicitly. Null means use single-arg form.
+    ///
+    /// @note Both pointers MUST be string literals (or otherwise have
+    ///       lifetime at least as long as the scope, with pointer
+    ///       stability). BufferTracer interns by pointer equality on
+    ///       the (cat, name) pair; passing `std::string::c_str()` or
+    ///       a stack buffer produces undefined behaviour. SerialTracer
+    ///       is more permissive — it copies the bytes immediately —
+    ///       but code written against SerialTracer must still use
+    ///       string literals to remain portable when a BufferTracer
+    ///       is added.
+    virtual ScopeGuard scope(const char* cat_or_name, const char* name = nullptr) = 0;
 
     /// Record a counter value at the current timestamp.
     virtual void counter(const char* name, int64_t value) = 0;

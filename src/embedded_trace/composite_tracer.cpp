@@ -11,7 +11,7 @@ CompositeTracer::CompositeTracer(ITracer** tracers, size_t count)
     child_count_ = count;
 }
 
-ScopeGuard CompositeTracer::scope(const char* name) {
+ScopeGuard CompositeTracer::scope(const char* cat_or_name, const char* name) {
     if (stack_depth_ >= MAX_NESTING) {
         // Nesting too deep — return no-op guard
         return ScopeGuard();
@@ -20,12 +20,13 @@ ScopeGuard CompositeTracer::scope(const char* name) {
     ScopeState& state = scope_stack_[stack_depth_];
     state.count = child_count_;
     for (size_t i = 0; i < child_count_; ++i) {
-        state.guards[i] = children_[i]->scope(name);
+        state.guards[i] = children_[i]->scope(cat_or_name, name);
     }
     stack_depth_++;
 
-    // Return a guard that pops the stack on exit
-    return ScopeGuard(this, scope_exit_callback, name, 0);
+    // Return a guard that pops the stack on exit. cat/name are not used
+    // by the composite itself — each child holds its own guard.
+    return ScopeGuard(this, scope_exit_callback, nullptr, nullptr, 0);
 }
 
 void CompositeTracer::counter(const char* name, int64_t value) {
@@ -64,7 +65,8 @@ void CompositeTracer::set_thread_name(ThreadId tid, const char* name) {
     }
 }
 
-void CompositeTracer::scope_exit_callback(void* context, const char* /*name*/, ScopeId /*scope_id*/) {
+void CompositeTracer::scope_exit_callback(void* context, const char* /*cat*/,
+                                          const char* /*name*/, ScopeId /*scope_id*/) {
     auto* self = static_cast<CompositeTracer*>(context);
     if (self->stack_depth_ == 0) return;
 

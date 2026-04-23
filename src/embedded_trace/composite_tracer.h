@@ -26,7 +26,7 @@ public:
     /// Construct with an array of child tracers.
     CompositeTracer(ITracer** tracers, size_t count);
 
-    ScopeGuard scope(const char* name) override;
+    ScopeGuard scope(const char* cat_or_name, const char* name = nullptr) override;
     void counter(const char* name, int64_t value) override;
     void flow_start(const char* name, FlowId id) override;
     void flow_step(const char* name, FlowId id) override;
@@ -51,7 +51,8 @@ private:
     ScopeState scope_stack_[MAX_NESTING];
     size_t stack_depth_;
 
-    static void scope_exit_callback(void* context, const char* name, ScopeId scope_id);
+    static void scope_exit_callback(void* context, const char* cat,
+                                    const char* name, ScopeId scope_id);
 };
 
 } // namespace et

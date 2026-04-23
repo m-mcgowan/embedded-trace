@@ -13,6 +13,7 @@ static TimestampUs buf_mock_timestamp() { return buf_mock_time; }
 
 struct CollectedEvent {
     TimestampUs timestamp;
+    const char* cat;
     const char* name;
     EventType type;
     int64_t value;
@@ -21,7 +22,7 @@ struct CollectedEvent {
 
 static void collect_callback(void* ctx, const DrainEvent& event) {
     auto* vec = static_cast<std::vector<CollectedEvent>*>(ctx);
-    vec->push_back({event.timestamp, event.name, event.type, event.value, event.flow_id});
+    vec->push_back({event.timestamp, event.cat, event.name, event.type, event.value, event.flow_id});
 }
 
 static std::vector<CollectedEvent> drain_all(const BufferTracer& tracer) {
@@ -193,6 +194,76 @@ TEST_CASE("BufferTracer: same name pointer shares scope ID") {
     for (auto& e : events) {
         CHECK(std::string(e.name) == "shared");
     }
+}
+
+// ── Category (cat) ──────────────────────────────────────────────
+
+TEST_CASE("BufferTracer: scope(cat, name) stores cat; drain exposes it") {
+    uint8_t buf[256];
+    buf_mock_time = 0;
+    BufferTracer tracer(buf, sizeof(buf), buf_mock_timestamp);
+
+    {
+        auto guard = tracer.scope("notecard", "verify");
+    }
+
+    auto events = drain_all(tracer);
+    REQUIRE(events.size() == 2);
+    CHECK(std::string(events[0].cat) == "notecard");
+    CHECK(std::string(events[0].name) == "verify");
+    CHECK(std::string(events[1].cat) == "notecard");
+    CHECK(std::string(events[1].name) == "verify");
+}
+
+TEST_CASE("BufferTracer: scope(dotted) stores full name, cat null — drain consumer splits") {
+    // BufferTracer stores pointers verbatim. Auto-split is a rendering
+    // concern; drain exposes the raw stored (cat, name). Consumers that
+    // want a split call split_scope_name() on the returned name.
+    uint8_t buf[256];
+    buf_mock_time = 0;
+    BufferTracer tracer(buf, sizeof(buf), buf_mock_timestamp);
+
+    {
+        auto guard = tracer.scope("notecard.verify");
+    }
+
+    auto events = drain_all(tracer);
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].cat == nullptr);
+    CHECK(std::string(events[0].name) == "notecard.verify");
+}
+
+TEST_CASE("BufferTracer: scope(plain) has null cat at drain") {
+    uint8_t buf[256];
+    buf_mock_time = 0;
+    BufferTracer tracer(buf, sizeof(buf), buf_mock_timestamp);
+
+    {
+        auto guard = tracer.scope("plain");
+    }
+
+    auto events = drain_all(tracer);
+    REQUIRE(events.size() == 2);
+    CHECK(events[0].cat == nullptr);
+    CHECK(std::string(events[0].name) == "plain");
+}
+
+TEST_CASE("BufferTracer: same (cat, name) pair shares scope ID") {
+    uint8_t buf[512];
+    buf_mock_time = 0;
+    BufferTracer tracer(buf, sizeof(buf), buf_mock_timestamp);
+
+    { auto g = tracer.scope("a", "x"); }
+    { auto g = tracer.scope("a", "x"); }   // same pair
+    { auto g = tracer.scope("b", "x"); }   // different cat, same name — distinct
+
+    // 3 scopes × 2 events = 6 events
+    auto events = drain_all(tracer);
+    REQUIRE(events.size() == 6);
+    // First four events: cat="a", last two: cat="b"
+    CHECK(std::string(events[0].cat) == "a");
+    CHECK(std::string(events[3].cat) == "a");
+    CHECK(std::string(events[4].cat) == "b");
 }
 
 } // namespace et

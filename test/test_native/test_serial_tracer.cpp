@@ -240,4 +240,71 @@ TEST_CASE("ITracer: set_process_name and set_thread_name default to no-op") {
     tracer.set_thread_name(123, "anything");  // must not crash
 }
 
+// ── SerialTracer: category (Chrome "cat" field) ─────────────────────
+
+TEST_CASE("SerialTracer: scope(cat, name) emits cat field explicitly") {
+    StringPrint out;
+    mock_time = 1000;
+    SerialTracer tracer(out, mock_timestamp);
+
+    {
+        auto guard = tracer.scope("notecard", "verify");
+        CHECK(out.contains("\"cat\":\"notecard\""));
+        CHECK(out.contains("\"name\":\"verify\""));
+        CHECK(out.contains("\"ph\":\"B\""));
+    }
+    CHECK(out.contains("\"ph\":\"E\""));
+    // Both B and E events carry cat
+    const auto& s = out.str();
+    size_t n = 0;
+    for (size_t pos = 0; (pos = s.find("\"cat\":\"notecard\"", pos)) != std::string::npos; ++pos) ++n;
+    CHECK(n == 2);
+}
+
+TEST_CASE("SerialTracer: scope(dotted) auto-splits on first dot") {
+    StringPrint out;
+    mock_time = 0;
+    SerialTracer tracer(out, mock_timestamp);
+
+    auto guard = tracer.scope("notecard.verify");
+
+    CHECK(out.contains("\"cat\":\"notecard\""));
+    CHECK(out.contains("\"name\":\"verify\""));
+}
+
+TEST_CASE("SerialTracer: scope(dotted) splits on FIRST dot only") {
+    StringPrint out;
+    mock_time = 0;
+    SerialTracer tracer(out, mock_timestamp);
+
+    auto guard = tracer.scope("net.http.get");
+
+    // cat is first segment, name is everything after
+    CHECK(out.contains("\"cat\":\"net\""));
+    CHECK(out.contains("\"name\":\"http.get\""));
+}
+
+TEST_CASE("SerialTracer: scope(plain_name) with no dot emits no cat field") {
+    StringPrint out;
+    mock_time = 0;
+    SerialTracer tracer(out, mock_timestamp);
+
+    auto guard = tracer.scope("plain");
+
+    CHECK(out.contains("\"name\":\"plain\""));
+    CHECK_FALSE(out.contains("\"cat\":"));
+}
+
+TEST_CASE("SerialTracer: scope(cat, name) with dot in name does NOT auto-split") {
+    // If cat is given explicitly, name is used verbatim even if dotted.
+    StringPrint out;
+    mock_time = 0;
+    SerialTracer tracer(out, mock_timestamp);
+
+    auto guard = tracer.scope("version", "1.2.3");
+
+    CHECK(out.contains("\"cat\":\"version\""));
+    CHECK(out.contains("\"name\":\"1.2.3\""));
+}
+
 } // namespace et

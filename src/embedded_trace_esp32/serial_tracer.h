@@ -47,7 +47,7 @@ public:
     SerialTracer(Print& output, TimestampFn timestamp_fn,
                  ProcessId pid = 1, ThreadIdFn tid_fn = nullptr);
 
-    ScopeGuard scope(const char* name) override;
+    ScopeGuard scope(const char* cat_or_name, const char* name = nullptr) override;
     void counter(const char* name, int64_t value) override;
     void flow_start(const char* name, FlowId id) override;
     void flow_step(const char* name, FlowId id) override;
@@ -61,10 +61,12 @@ private:
     ProcessId pid_;
     ThreadIdFn tid_fn_;
 
-    void emit_begin(const char* name);
-    void emit_end(const char* name, ScopeId scope_id);
+    void emit_begin(const char* cat, const char* name);
+    void emit_end(const char* cat, const char* name);
+    void emit_scope_event(char phase, const char* cat, const char* name);
 
-    static void scope_exit_callback(void* context, const char* name, ScopeId scope_id);
+    static void scope_exit_callback(void* context, const char* cat,
+                                    const char* name, ScopeId scope_id);
 };
 
 } // namespace et

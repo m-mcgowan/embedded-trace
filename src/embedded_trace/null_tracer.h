@@ -17,8 +17,9 @@ public:
         return inst;
     }
 
-    ScopeGuard scope(const char* name) override {
-        return ScopeGuard(nullptr, nullptr, name, 0);
+    ScopeGuard scope(const char* cat_or_name, const char* name = nullptr) override {
+        (void)cat_or_name; (void)name;
+        return ScopeGuard();
     }
 
     void counter(const char*, int64_t) override {}

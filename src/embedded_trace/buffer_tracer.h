@@ -25,6 +25,7 @@ enum class EventType : uint8_t {
 /// Visitor callback for drain(). Called once per event.
 struct DrainEvent {
     TimestampUs timestamp;
+    const char* cat;        ///< Scope category (Chrome "cat"). Null if absent.
     const char* name;       ///< Scope/counter/flow name (resolved from scope_id)
     EventType type;
     int64_t value;          ///< Counter value (only for EventType::counter)
@@ -54,7 +55,7 @@ public:
     /// The buffer is NOT owned — caller manages its lifetime.
     BufferTracer(uint8_t* buffer, size_t size, TimestampFn timestamp_fn);
 
-    ScopeGuard scope(const char* name) override;
+    ScopeGuard scope(const char* cat_or_name, const char* name = nullptr) override;
     void counter(const char* name, int64_t value) override;
     void flow_start(const char* name, FlowId id) override;
     void flow_step(const char* name, FlowId id) override;
@@ -81,15 +82,19 @@ private:
     size_t event_count_;
     bool overflowed_;
 
-    // Scope name table: maps scope_id → name pointer
-    const char* scope_names_[MAX_SCOPE_NAMES];
+    // Scope name table: maps scope_id → (cat, name) pair. cat may be null.
+    // For non-scope events (counter, flow_*), cat is always null.
+    // Interning uses pointer equality on the (cat, name) pair.
+    struct NameEntry { const char* cat; const char* name; };
+    NameEntry scope_names_[MAX_SCOPE_NAMES];
     ScopeId scope_name_count_;
 
-    ScopeId intern_name(const char* name);
+    ScopeId intern_name(const char* cat, const char* name);
     bool write_event(EventType type, ScopeId scope_id,
                      const void* payload = nullptr, size_t payload_size = 0);
 
-    static void scope_exit_callback(void* context, const char* name, ScopeId scope_id);
+    static void scope_exit_callback(void* context, const char* cat,
+                                    const char* name, ScopeId scope_id);
 };
 
 } // namespace et

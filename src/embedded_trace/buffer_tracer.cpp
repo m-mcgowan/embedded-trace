@@ -1,4 +1,5 @@
 #include "buffer_tracer.h"
+#include "name_split.h"
 #include <cstring>
 
 namespace et {
@@ -8,17 +9,18 @@ BufferTracer::BufferTracer(uint8_t* buffer, size_t size, TimestampFn timestamp_f
       write_pos_(0), event_count_(0), overflowed_(false),
       scope_names_{}, scope_name_count_(0) {}
 
-ScopeId BufferTracer::intern_name(const char* name) {
-    // Search by pointer equality (scope names must be string literals)
+ScopeId BufferTracer::intern_name(const char* cat, const char* name) {
+    // Search by pointer equality on the (cat, name) pair
+    // (names must be string literals)
     for (ScopeId i = 0; i < scope_name_count_; ++i) {
-        if (scope_names_[i] == name) {
+        if (scope_names_[i].cat == cat && scope_names_[i].name == name) {
             return i;
         }
     }
-    // Add new name if space available
+    // Add new entry if space available
     if (scope_name_count_ < MAX_SCOPE_NAMES) {
         ScopeId id = scope_name_count_++;
-        scope_names_[id] = name;
+        scope_names_[id] = NameEntry{cat, name};
         return id;
     }
     // Table full — reuse last slot (degenerate case)
@@ -60,29 +62,31 @@ bool BufferTracer::write_event(EventType type, ScopeId scope_id,
     return true;
 }
 
-ScopeGuard BufferTracer::scope(const char* name) {
-    ScopeId id = intern_name(name);
+ScopeGuard BufferTracer::scope(const char* cat_or_name, const char* name) {
+    // Intern exactly what the caller gave us — pointers must be stable.
+    // Drain-time split_scope_name() will derive (cat, name) consistently.
+    ScopeId id = intern_name(name ? cat_or_name : nullptr, name ? name : cat_or_name);
     write_event(EventType::scope_enter, id);
-    return ScopeGuard(this, scope_exit_callback, name, id);
+    return ScopeGuard(this, scope_exit_callback, nullptr, nullptr, id);
 }
 
 void BufferTracer::counter(const char* name, int64_t value) {
-    ScopeId id = intern_name(name);
+    ScopeId id = intern_name(nullptr, name);
     write_event(EventType::counter, id, &value, sizeof(value));
 }
 
 void BufferTracer::flow_start(const char* name, FlowId id) {
-    ScopeId scope_id = intern_name(name);
+    ScopeId scope_id = intern_name(nullptr, name);
     write_event(EventType::flow_start, scope_id, &id, sizeof(id));
 }
 
 void BufferTracer::flow_step(const char* name, FlowId id) {
-    ScopeId scope_id = intern_name(name);
+    ScopeId scope_id = intern_name(nullptr, name);
     write_event(EventType::flow_step, scope_id, &id, sizeof(id));
 }
 
 void BufferTracer::flow_end(const char* name, FlowId id) {
-    ScopeId scope_id = intern_name(name);
+    ScopeId scope_id = intern_name(nullptr, name);
     write_event(EventType::flow_end, scope_id, &id, sizeof(id));
 }
 
@@ -109,7 +113,21 @@ void BufferTracer::drain(DrainCallback callback, void* context) const {
         DrainEvent event{};
         event.timestamp = ts;
         event.type = type;
-        event.name = (scope_id < scope_name_count_) ? scope_names_[scope_id] : "";
+        if (scope_id < scope_name_count_) {
+            const NameEntry& entry = scope_names_[scope_id];
+            // Expose the stored (cat, name) verbatim. cat is non-null only
+            // if the caller passed an explicit category via scope(cat, name).
+            // Dotted single-arg names (e.g. "notecard.verify") come through
+            // here with cat=nullptr and name="notecard.verify" — drain
+            // consumers that want a rendered split should call
+            // split_scope_name() themselves (avoids non-null-terminated
+            // pointers in the DrainEvent API).
+            event.cat = entry.cat;
+            event.name = entry.name;
+        } else {
+            event.cat = nullptr;
+            event.name = "";
+        }
 
         size_t payload_size = 0;
 
@@ -145,7 +163,8 @@ void BufferTracer::reset() {
     // Keep scope name table — names are still valid string literals
 }
 
-void BufferTracer::scope_exit_callback(void* ctx, const char* name, ScopeId scope_id) {
+void BufferTracer::scope_exit_callback(void* ctx, const char* /*cat*/,
+                                       const char* /*name*/, ScopeId scope_id) {
     auto* self = static_cast<BufferTracer*>(ctx);
     self->write_event(EventType::scope_exit, scope_id);
 }

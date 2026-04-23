@@ -1,5 +1,6 @@
 #include "serial_tracer.h"
 #include "esp_idf_tid_fn.h"
+#include "../embedded_trace/name_split.h"
 #include <cstdio>
 
 namespace et {
@@ -17,29 +18,50 @@ SerialTracer::SerialTracer(Print& output, TimestampFn timestamp_fn,
     : output_(output), timestamp_fn_(timestamp_fn),
       pid_(pid), tid_fn_(tid_fn ? tid_fn : default_tid_fn) {}
 
-void SerialTracer::emit_begin(const char* name) {
+// Render B or E with optional cat. phase is 'B' or 'E'. When cat is
+// null, name may be a dotted identifier — split on first dot at render
+// time. Explicit-cat case passes cat non-null and name verbatim.
+void SerialTracer::emit_scope_event(char phase, const char* cat, const char* name) {
     TimestampUs ts = timestamp_fn_();
     ThreadId tid = tid_fn_();
     char json[192];
-    snprintf(json, sizeof(json),
-             "{\"ph\":\"B\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
-             ts, name, pid_, tid);
+    if (cat) {
+        // Explicit cat (no splitting). name used verbatim.
+        snprintf(json, sizeof(json),
+                 "{\"ph\":\"%c\",\"ts\":%u,\"cat\":\"%s\",\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
+                 phase, ts, cat, name, pid_, tid);
+    } else {
+        // Single-arg form — auto-split on first dot.
+        SplitName s = split_scope_name(name, nullptr);
+        if (s.cat) {
+            snprintf(json, sizeof(json),
+                     "{\"ph\":\"%c\",\"ts\":%u,\"cat\":\"%.*s\",\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
+                     phase, ts, (int)s.cat_len, s.cat, s.name, pid_, tid);
+        } else {
+            snprintf(json, sizeof(json),
+                     "{\"ph\":\"%c\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
+                     phase, ts, (name ? name : ""), pid_, tid);
+        }
+    }
     output_.println(json);
 }
 
-void SerialTracer::emit_end(const char* name, ScopeId /*scope_id*/) {
-    TimestampUs ts = timestamp_fn_();
-    ThreadId tid = tid_fn_();
-    char json[192];
-    snprintf(json, sizeof(json),
-             "{\"ph\":\"E\",\"ts\":%u,\"name\":\"%s\",\"pid\":%u,\"tid\":%u}",
-             ts, name, pid_, tid);
-    output_.println(json);
+void SerialTracer::emit_begin(const char* cat, const char* name) {
+    emit_scope_event('B', cat, name);
 }
 
-ScopeGuard SerialTracer::scope(const char* name) {
-    emit_begin(name);
-    return ScopeGuard(this, scope_exit_callback, name, 0);
+void SerialTracer::emit_end(const char* cat, const char* name) {
+    emit_scope_event('E', cat, name);
+}
+
+ScopeGuard SerialTracer::scope(const char* cat_or_name, const char* name) {
+    // Explicit form: scope(cat, name) — cat non-null, name non-null.
+    // Single-arg form: scope(name_or_dotted) — first param is the full
+    // identifier, second is null; emit_scope_event() splits at render.
+    const char* cat = name ? cat_or_name : nullptr;
+    const char* scope_name = name ? name : cat_or_name;
+    emit_begin(cat, scope_name);
+    return ScopeGuard(this, scope_exit_callback, cat, scope_name, 0);
 }
 
 void SerialTracer::counter(const char* name, int64_t value) {
@@ -82,9 +104,10 @@ void SerialTracer::flow_end(const char* name, FlowId id) {
     output_.println(json);
 }
 
-void SerialTracer::scope_exit_callback(void* context, const char* name, ScopeId scope_id) {
+void SerialTracer::scope_exit_callback(void* context, const char* cat,
+                                       const char* name, ScopeId /*scope_id*/) {
     auto* self = static_cast<SerialTracer*>(context);
-    self->emit_end(name, scope_id);
+    self->emit_end(cat, name);
 }
 
 void SerialTracer::set_process_name(const char* name) {

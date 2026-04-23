@@ -127,7 +127,14 @@ class ITracer {
 public:
     virtual ~ITracer() = default;
 
-    virtual ScopeGuard scope(const char* name) = 0;
+    // scope() has a category field (Chrome "cat") via an optional second
+    // arg. Two calling forms:
+    //   scope("notecard", "verify")   — explicit (category, name)
+    //   scope("notecard.verify")      — single arg, tracer auto-splits
+    //                                   on first dot at render time
+    virtual ScopeGuard scope(const char* cat_or_name,
+                             const char* name = nullptr) = 0;
+
     virtual void counter(const char* name, int64_t value) = 0;
 
     virtual void flow_start(const char* name, FlowId id) = 0;
@@ -138,6 +145,29 @@ public:
     virtual void set_thread_name(ThreadId tid, const char* name) = 0;
 };
 ```
+
+#### Category handling
+
+Perfetto uses Chrome's `cat` field for colour-coding and SQL filtering.
+embedded-trace exposes it via the optional second arg on `scope()`:
+
+```cpp
+tracer.scope("notecard", "verify");   // explicit → cat="notecard" name="verify"
+tracer.scope("notecard.verify");      // dotted  → cat="notecard" name="verify"
+tracer.scope("plain");                // no dot  → cat=null     name="plain"
+```
+
+The split rule is shared between tracers via `split_scope_name()` in
+`embedded_trace/name_split.h`. SerialTracer splits at JSON emit time;
+BufferTracer stores pointers verbatim and exposes them on `DrainEvent`
+unchanged (drain consumers that want the split call `split_scope_name()`
+on the returned name).
+
+Both `cat` and `name` pointers must be string literals — BufferTracer
+interns by pointer equality on the `(cat, name)` pair.
+
+`counter()` and `flow_*` remain single-arg for now; if category becomes
+useful for those event types, the same pattern extends.
 
 To avoid stubbing methods you don't care about, inherit from a narrow
 named mixin instead of `ITracer` directly:

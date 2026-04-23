@@ -17,6 +17,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - Build-time #warning when SerialTracer / BufferTracer / CompositeTracer headers are included without -DEMBEDDED_TRACE_ENABLED=1, catching the silent-no-op-macro footgun at compile time.
 
 ### Changed
+- **ITracer::scope() gains an optional category parameter.** Signature: `scope(const char* cat_or_name, const char* name = nullptr)`. Two forms: `scope("notecard", "verify")` (explicit) and `scope("notecard.verify")` (dotted, auto-split at render time). Emits Chrome "cat" field on B and E events — unlocks Perfetto colour-coding and SQL filtering. Shared split rule lives in `embedded_trace/name_split.h`. BufferTracer's DrainEvent gains a `cat` field; scope-name interning is now by `(cat, name)` pair, costing +4 bytes per entry (~256 bytes on ESP32 with 64-entry default).
+- **ScopeGuard::ExitFn signature gains a `cat` parameter** to thread explicit categories through to the exit event. ScopeGuard grows by one pointer (~4 bytes on 32-bit). Migration: existing ExitFn callbacks take one extra `const char* cat` argument after `void* context`.
 - **ITracer is now fully pure virtual.** flow_start/step/end and set_process_name/set_thread_name were previously virtual-with-empty-bodies, which silently dropped events on any subclass that forgot to override. Implementations now either override every method explicitly or inherit from a narrow named mixin:
   - `NoFlowTracer` — no-op defaults for the three flow_* methods
   - `NoMetadataTracer` — no-op defaults for the two set_*_name methods

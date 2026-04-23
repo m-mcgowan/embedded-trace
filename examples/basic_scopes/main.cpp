@@ -44,14 +44,17 @@ static void busy_work(int ms) {
 }
 
 static void process_batch(et::ITracer& tracer, int batch_id) {
-    TRACE_SCOPE(tracer, "process_batch");
+    // Explicit (cat, name) form — renders as "cat":"batch","name":"process".
+    auto outer = tracer.scope("batch", "process");
 
     {
-        TRACE_SCOPE(tracer, "validate");
+        // Dotted single-arg form — tracer auto-splits on first dot.
+        // Renders identically: "cat":"batch","name":"validate".
+        auto g = tracer.scope("batch.validate");
         busy_work(2);
     }
     {
-        TRACE_SCOPE(tracer, "transform");
+        auto g = tracer.scope("batch.transform");
         busy_work(5);
         TRACE_COUNTER(tracer, "items_processed", batch_id * 10);
     }

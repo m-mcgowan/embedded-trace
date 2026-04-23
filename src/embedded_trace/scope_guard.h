@@ -17,14 +17,23 @@ class ScopeGuard {
 public:
     /// Callback invoked on scope exit. Tracer implementations set this
     /// to record the exit event without exposing internal API.
-    using ExitFn = void (*)(void* context, const char* name, ScopeId scope_id);
+    ///
+    /// cat may be null (no category / dotted-name case where the split
+    /// happens inside the tracer). name is the scope name as
+    /// rendered/stored by the tracer — for BufferTracer this is
+    /// unused (scope_id indexes the real storage); for SerialTracer it's
+    /// the literal pointer.
+    using ExitFn = void (*)(void* context, const char* cat, const char* name, ScopeId scope_id);
 
     /// Default-constructed guard is a no-op: null exit_fn means the
     /// destructor does nothing. NullTracer returns these to stay
     /// branch-free at exit. Also the state left behind after move
     /// or end().
-    ScopeGuard() : context_(nullptr), exit_fn_(nullptr), name_(nullptr), scope_id_(0) {}
-    ScopeGuard(void* context, ExitFn exit_fn, const char* name, ScopeId scope_id);
+    ScopeGuard()
+        : context_(nullptr), exit_fn_(nullptr),
+          cat_(nullptr), name_(nullptr), scope_id_(0) {}
+    ScopeGuard(void* context, ExitFn exit_fn,
+               const char* cat, const char* name, ScopeId scope_id);
     ~ScopeGuard();
 
     /// End the scope eagerly. Fires the exit callback once and disables the
@@ -42,6 +51,7 @@ public:
 private:
     void* context_;
     ExitFn exit_fn_;
+    const char* cat_;
     const char* name_;
     ScopeId scope_id_;
 };
