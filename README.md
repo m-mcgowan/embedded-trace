@@ -49,6 +49,8 @@ build_flags = -DEMBEDDED_TRACE_ENABLED=1
 
 Without `-DEMBEDDED_TRACE_ENABLED=1`, all `TRACE_*` macros compile to no-ops (zero code, zero RAM, zero CPU). The tracer headers emit a `#warning` if you include them with the flag off — a common first-time-user trip.
 
+`library.json`'s `srcFilter` compiles both `embedded_trace/` (core) and `embedded_trace_esp32/` (ESP-IDF bindings). The bindings guard their FreeRTOS/Arduino includes behind `#ifdef ESP_PLATFORM` / `#ifdef ARDUINO`, so the whole library compiles cleanly on the `native` platform too — no `build_src_filter` gymnastics required.
+
 ## Examples
 
 - [`examples/basic_scopes/`](examples/basic_scopes/) — host-runnable native demo. `pio run -e basic_scopes -t exec`.
@@ -71,6 +73,18 @@ Without `-DEMBEDDED_TRACE_ENABLED=1`, all `TRACE_*` macros compile to no-ops (ze
   Pop back above the scope before the no-return call, or hold the guard
   manually (`auto g = tracer.scope(...)`) and call `g.end()` before it.
   See [design.md — Scopes and no-return calls](docs/design.md#scopes-and-no-return-calls).
+- **Scope names must be string literals.** `BufferTracer` interns by
+  pointer equality; passing `std::string::c_str()` or a stack buffer
+  breaks drain. `SerialTracer` is lenient but code portable to both must
+  use literals. See [design.md — Scope name lifetime](docs/design.md#scope-name-lifetime).
+- **Scope names longer than ~160 chars silently truncate** in `SerialTracer`'s
+  192-byte stack buffer, producing malformed JSON. Keep names short.
+- **Timestamps wrap at ~71 minutes.** `TimestampUs` is `uint32_t`; for
+  long-running traces, wrap handling is the host collector's job.
+- **Naming conventions:** the package is `embedded-trace` (hyphen) in
+  `lib_deps`; the headers are under `embedded_trace/` (underscore); the
+  namespace is `et::`; the macro prefix is `ET_`. Four forms of the
+  same name — copy-paste carefully.
 
 ## Further reading
 

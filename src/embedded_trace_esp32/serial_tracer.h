@@ -27,6 +27,10 @@ namespace et {
  *
  * Output is directly loadable in Perfetto UI when wrapped by the host
  * in {"traceEvents":[...]}.
+ *
+ * @note Each event is formatted into a 192-byte stack buffer. Names
+ *       longer than ~160 characters silently truncate via snprintf,
+ *       producing malformed JSON lines. Keep names short.
  */
 class SerialTracer final : public ITracer {
 public:

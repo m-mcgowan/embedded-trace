@@ -18,6 +18,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 
 ### Documentation
 - design.md "Tracer ownership" section: three patterns (injected, user-declared global reference, FreeRTOS task-local storage) with their catches. Library ships no global / TLS helper — each pattern is user-side. Notes the C++ thread_local emutls hazard on ESP-IDF (idle task stack overflow) and points at vTaskSetThreadLocalStoragePointer instead.
+- Scope name lifetime rule spelled out: names must be string literals (BufferTracer interns by pointer equality; SerialTracer is lenient but portable code must still use literals). Noted in ITracer::scope() doc, design.md, and README Gotchas.
+- README Gotchas expanded: SerialTracer's 192-byte stack buffer silently truncates names > ~160 chars; TimestampUs wraps at ~71 min; four naming forms (embedded-trace / embedded_trace / et / ET_) called out.
+- ScopeGuard default constructor intent documented (no-op guard; also the state after move-from / end()).
+- README Install clarifies that both srcFilter dirs compile cleanly on native (bindings guard FreeRTOS/Arduino includes under ESP_PLATFORM / ARDUINO) — no build_src_filter gymnastics required.
+- SerialTracer class docstring notes the 192-byte buffer limit.
 - NullTracer — zero-cost no-op tracer for production builds
 - SerialTracer — ESP32 serial tracer emitting Chrome Trace Event JSON
 - Trace macros (TRACE_SCOPE, TRACE_COUNTER) for convenient instrumentation

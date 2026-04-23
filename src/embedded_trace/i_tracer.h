@@ -20,6 +20,15 @@ public:
     /// Begin a named scope. Returns an RAII guard that ends the scope
     /// on destruction. Scopes nest — the current scope becomes the
     /// parent of any scope opened before this one closes.
+    ///
+    /// @note @p name MUST be a string literal (or otherwise have lifetime
+    ///       at least as long as the scope, with pointer stability).
+    ///       BufferTracer interns names by pointer equality for its
+    ///       scope_id table; passing `std::string::c_str()` or a stack
+    ///       buffer produces undefined behaviour. SerialTracer is more
+    ///       permissive — it copies the pointer's bytes immediately —
+    ///       but code written against SerialTracer must still use string
+    ///       literals to remain portable when a BufferTracer is added.
     virtual ScopeGuard scope(const char* name) = 0;
 
     /// Record a counter value at the current timestamp.

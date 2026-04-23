@@ -126,7 +126,9 @@ public:
 
     /// Begin a named scope. Returns an RAII guard that ends the scope
     /// on destruction. Scopes nest — the current scope becomes the
-    /// parent of any scope opened before this one closes.
+    /// parent of any scope opened before this one closes. `name` MUST
+    /// be a string literal (BufferTracer interns by pointer equality —
+    /// see Scope name lifetime below).
     virtual ScopeGuard scope(const char* name) = 0;
 
     /// Record a counter value at the current timestamp. Counters are
@@ -164,6 +166,24 @@ Implementations:
 - **NullTracer / BufferTracer** — no-op (default). BufferTracer has
   no host-side use case for buffered metadata yet.
 - **CompositeTracer** — forwards to all children.
+
+#### Scope name lifetime
+
+Scope names passed to `ITracer::scope()` (and `TRACE_SCOPE`) MUST be
+**string literals** — or some other pointer with program-long lifetime
+and stable address.
+
+BufferTracer interns names by pointer equality: the scope-enter event
+stores a `ScopeId` into a fixed-size table (`MAX_SCOPE_NAMES = 64`), and
+later drain() resolves the ID back to the pointer. If the pointer no
+longer points at a valid string by drain time, the trace output is
+garbage.
+
+SerialTracer is lenient — it copies the pointed-at bytes into its JSON
+line immediately and forgets the pointer. Code written against
+SerialTracer with dynamic names (e.g. `std::string::c_str()`) **will
+break** when a BufferTracer (or CompositeTracer with a BufferTracer
+child) is added later. Keep names as literals.
 
 ### ScopeGuard
 

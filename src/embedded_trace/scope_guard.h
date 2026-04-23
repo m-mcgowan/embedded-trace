@@ -19,6 +19,10 @@ public:
     /// to record the exit event without exposing internal API.
     using ExitFn = void (*)(void* context, const char* name, ScopeId scope_id);
 
+    /// Default-constructed guard is a no-op: null exit_fn means the
+    /// destructor does nothing. NullTracer returns these to stay
+    /// branch-free at exit. Also the state left behind after move
+    /// or end().
     ScopeGuard() : context_(nullptr), exit_fn_(nullptr), name_(nullptr), scope_id_(0) {}
     ScopeGuard(void* context, ExitFn exit_fn, const char* name, ScopeId scope_id);
     ~ScopeGuard();
