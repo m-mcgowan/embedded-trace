@@ -386,7 +386,7 @@ public:
 
 | Field | Size | Description |
 |-------|------|-------------|
-| `timestamp_us` | 4 bytes | From `TimestampFn`, truncated to uint32 (~71 min before wrap) |
+| `timestamp_us` | 4 bytes | From `TimestampFn`, truncated to uint32 (~71 min before wrap — see [Timestamp wrap](#timestamp-wrap)) |
 | `scope_id` | 2 bytes | Auto-assigned ID for each unique scope name |
 | `event_type` | 1 byte | 0=scope_enter, 1=scope_exit, 2=counter, 3-5=flow events |
 | `payload` | 0-8 bytes | Counter value (type=2, 8B) or FlowId (type=3-5, 2B) |
@@ -449,6 +449,49 @@ Output is directly loadable in [Perfetto UI](https://ui.perfetto.dev) when
 wrapped in `{"traceEvents":[...]}` by the host collector. Host-side consumers
 (embedded-bridge EventCapture, ppk2-python EventMapper) parse these same
 Chrome JSON lines directly.
+
+#### Timestamp wrap
+
+`TimestampUs` is `uint32_t` microseconds from an arbitrary epoch. It wraps
+every **2³² µs ≈ 71.58 minutes** of continuous tracer activity.
+
+The library is deliberately wrap-unaware on the device:
+
+- **SerialTracer** emits `ts` straight into JSON, no comparison.
+- **BufferTracer** stores raw 4-byte `ts` and reads it back on drain.
+- No `last_ts_` / wrap counter anywhere — every event is self-contained.
+
+Rationale: on-device wrap detection would cost a branch and shared state
+per event (race-prone across tasks) without fixing anything the host
+can't fix more robustly.
+
+**Host-side consumers are responsible for wrap detection.** The algorithm
+is trivial — if `ts[i] < ts[i-1]` during the same tracer session, add 2³²
+to all subsequent timestamps:
+
+```python
+wrap_count = 0
+prev_raw = 0
+for event in events:
+    raw = event["ts"]
+    if raw < prev_raw:
+        wrap_count += 1
+    prev_raw = raw
+    event["ts"] = raw + wrap_count * (1 << 32)
+```
+
+Perfetto requires monotonically increasing `ts`; without this fix,
+post-wrap events appear at the start of the timeline.
+
+**Downstream consumers that must implement this:**
+
+- `embedded-bridge` / `EventCapture` — Chrome JSON line parser.
+- `ppk2-python` / `EventMapper` — scope-to-PPK2-channel mapper.
+
+If/when a 64-bit `TimestampUs` build flag lands, these consumers will
+need to detect the chosen width (likely by a marker in the trace stream,
+e.g. first `M` metadata event) and skip the wrap compensation when
+timestamps are already monotonic.
 
 ### GPIOTracer (ESP32)
 

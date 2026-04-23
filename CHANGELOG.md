@@ -26,6 +26,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - NullTracer now implements all seven methods inline (the canonical "do nothing" reference). BufferTracer now inherits NoMetadataTracer. SerialTracer and CompositeTracer unchanged — they already implement the full contract. Third-party tracer subclasses will get a compile error pointing at the missing method, which is the point.
 
 ### Documentation
+- design.md "Timestamp wrap" section documents on-device wrap-unawareness (by design) and the one-line host-side wrap detection that downstream consumers (embedded-bridge EventCapture, ppk2-python EventMapper) must implement to keep Perfetto's monotonic-ts assumption.
 - design.md "Tracer ownership" section: three patterns (injected, user-declared global reference, FreeRTOS task-local storage) with their catches. Library ships no global / TLS helper — each pattern is user-side. Notes the C++ thread_local emutls hazard on ESP-IDF (idle task stack overflow) and points at vTaskSetThreadLocalStoragePointer instead.
 - Scope name lifetime rule spelled out: names must be string literals (BufferTracer interns by pointer equality; SerialTracer is lenient but portable code must still use literals). Noted in ITracer::scope() doc, design.md, and README Gotchas.
 - README Gotchas expanded: SerialTracer's 192-byte stack buffer silently truncates names > ~160 chars; TimestampUs wraps at ~71 min; four naming forms (embedded-trace / embedded_trace / et / ET_) called out.

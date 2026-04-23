@@ -79,8 +79,9 @@ Without `-DEMBEDDED_TRACE_ENABLED=1`, all `TRACE_*` macros compile to no-ops (ze
   use literals. See [design.md — Scope name lifetime](docs/design.md#scope-name-lifetime).
 - **Scope names longer than ~160 chars silently truncate** in `SerialTracer`'s
   192-byte stack buffer, producing malformed JSON. Keep names short.
-- **Timestamps wrap at ~71 minutes.** `TimestampUs` is `uint32_t`; for
-  long-running traces, wrap handling is the host collector's job.
+- **Timestamps wrap at ~71 minutes.** `TimestampUs` is `uint32_t`; the
+  library is wrap-unaware on-device by design. Host-side consumers detect
+  `ts[i] < ts[i-1]` and add 2³². See [design.md — Timestamp wrap](docs/design.md#timestamp-wrap).
 - **Naming conventions:** the package is `embedded-trace` (hyphen) in
   `lib_deps`; the headers are under `embedded_trace/` (underscore); the
   namespace is `et::`; the macro prefix is `ET_`. Four forms of the
