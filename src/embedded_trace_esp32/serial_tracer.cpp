@@ -87,4 +87,20 @@ void SerialTracer::scope_exit_callback(void* context, const char* name, ScopeId 
     self->emit_end(name, scope_id);
 }
 
+void SerialTracer::set_process_name(const char* name) {
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ph\":\"M\",\"name\":\"process_name\",\"pid\":%u,\"args\":{\"name\":\"%s\"}}",
+             pid_, name);
+    output_.println(json);
+}
+
+void SerialTracer::set_thread_name(ThreadId tid, const char* name) {
+    char json[192];
+    snprintf(json, sizeof(json),
+             "{\"ph\":\"M\",\"name\":\"thread_name\",\"pid\":%u,\"tid\":%u,\"args\":{\"name\":\"%s\"}}",
+             pid_, tid, name);
+    output_.println(json);
+}
+
 } // namespace et

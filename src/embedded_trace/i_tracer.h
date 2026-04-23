@@ -35,6 +35,19 @@ public:
 
     /// Mark the end of a causal flow.
     virtual void flow_end(const char* name, FlowId id) { (void)name; (void)id; }
+
+    /// Set the human-readable process name shown in Perfetto.
+    /// Emits a Chrome ph:M metadata event. Call once at trace start.
+    /// Default no-op — implementations that have no notion of metadata
+    /// (NullTracer, BufferTracer) ignore it.
+    virtual void set_process_name(const char* name) { (void)name; }
+
+    /// Set the human-readable name for a specific thread/task lane in
+    /// Perfetto. Emits a Chrome ph:M metadata event for the given tid.
+    /// Call once per task at trace start, e.g.:
+    ///   tracer.set_thread_name(et::esp_idf_tid_fn(), "loopTask");
+    /// Default no-op (see set_process_name).
+    virtual void set_thread_name(ThreadId tid, const char* name) { (void)tid; (void)name; }
 };
 
 } // namespace et

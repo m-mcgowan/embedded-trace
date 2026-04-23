@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 #include <embedded_trace/native_print.h>
+#include <embedded_trace/null_tracer.h>
 #include <embedded_trace_esp32/serial_tracer.h>
 #include <string>
 
@@ -185,6 +186,58 @@ TEST_CASE("SerialTracer: flow_end emits ph:f") {
     tracer.flow_end("notecard_req", 42);
     CHECK(out.contains("\"ph\":\"f\""));
     CHECK(out.contains("\"id\":42"));
+}
+
+// ── SerialTracer: metadata events (ph:M) ────────────────────────────
+
+TEST_CASE("SerialTracer: set_process_name emits ph:M process_name") {
+    StringPrint out;
+    SerialTracer tracer(out, mock_timestamp, 7);
+
+    tracer.set_process_name("simple_publish");
+
+    CHECK(out.contains("\"ph\":\"M\""));
+    CHECK(out.contains("\"name\":\"process_name\""));
+    CHECK(out.contains("\"pid\":7"));
+    CHECK(out.contains("\"args\":{\"name\":\"simple_publish\"}"));
+    // Metadata events have no timestamp — must NOT include "ts"
+    CHECK_FALSE(out.contains("\"ts\":"));
+}
+
+TEST_CASE("SerialTracer: set_thread_name emits ph:M thread_name with tid") {
+    StringPrint out;
+    SerialTracer tracer(out, mock_timestamp, 1);
+
+    tracer.set_thread_name(42, "loopTask");
+
+    CHECK(out.contains("\"ph\":\"M\""));
+    CHECK(out.contains("\"name\":\"thread_name\""));
+    CHECK(out.contains("\"pid\":1"));
+    CHECK(out.contains("\"tid\":42"));
+    CHECK(out.contains("\"args\":{\"name\":\"loopTask\"}"));
+    CHECK_FALSE(out.contains("\"ts\":"));
+}
+
+TEST_CASE("SerialTracer: set_thread_name emits one event per call") {
+    StringPrint out;
+    SerialTracer tracer(out, mock_timestamp, 1);
+
+    tracer.set_thread_name(1, "loopTask");
+    tracer.set_thread_name(2, "NotecardIO");
+
+    const auto& s = out.str();
+    auto first = s.find("loopTask");
+    auto second = s.find("NotecardIO");
+    CHECK(first != std::string::npos);
+    CHECK(second != std::string::npos);
+    CHECK(first < second);
+}
+
+TEST_CASE("ITracer: set_process_name and set_thread_name default to no-op") {
+    // NullTracer inherits default no-op metadata implementations.
+    auto& tracer = NullTracer::instance();
+    tracer.set_process_name("anything");      // must not crash
+    tracer.set_thread_name(123, "anything");  // must not crash
 }
 
 } // namespace et

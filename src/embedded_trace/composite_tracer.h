@@ -27,6 +27,8 @@ public:
     void flow_start(const char* name, FlowId id) override;
     void flow_step(const char* name, FlowId id) override;
     void flow_end(const char* name, FlowId id) override;
+    void set_process_name(const char* name) override;
+    void set_thread_name(ThreadId tid, const char* name) override;
 
 private:
     ITracer* children_[MAX_CHILDREN];

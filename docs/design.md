@@ -142,8 +142,28 @@ public:
 
     /// Mark the end of a causal flow.
     virtual void flow_end(const char* name, FlowId id) {}
+
+    /// Set the human-readable process name shown in Perfetto.
+    /// Emits a Chrome ph:M metadata event. Default no-op.
+    virtual void set_process_name(const char* name) {}
+
+    /// Set the human-readable name for a specific tid in Perfetto.
+    /// Emits a Chrome ph:M metadata event. Default no-op.
+    virtual void set_thread_name(ThreadId tid, const char* name) {}
 };
 ```
+
+Metadata events are one-shot: emit `set_process_name` once at trace
+start, and `set_thread_name(tid, "...")` once per task. Without them,
+Perfetto labels lanes `process_1` / `thread_<task_handle>` — readable
+but not informative. With them you get `simple_publish v0.10.1` /
+`loopTask` / `NotecardIO`.
+
+Implementations:
+- **SerialTracer** — emits Chrome `ph:M` JSON.
+- **NullTracer / BufferTracer** — no-op (default). BufferTracer has
+  no host-side use case for buffered metadata yet.
+- **CompositeTracer** — forwards to all children.
 
 ### ScopeGuard
 
@@ -341,6 +361,8 @@ public:
 Emits one Chrome JSON event per line:
 
 ```json
+{"ph":"M","name":"process_name","pid":1,"args":{"name":"simple_publish"}}
+{"ph":"M","name":"thread_name","pid":1,"tid":2,"args":{"name":"loopTask"}}
 {"ph":"B","ts":1234,"name":"gps_fix","pid":1,"tid":2}
 {"ph":"E","ts":5678,"name":"gps_fix","pid":1,"tid":2}
 {"ph":"C","ts":5678,"name":"heap","pid":1,"tid":2,"args":{"value":102400}}
@@ -356,6 +378,7 @@ Emits one Chrome JSON event per line:
 - `ph:"B"` / `"E"` — scope begin/end
 - `ph:"C"` — counter sample
 - `ph:"s"` / `"t"` / `"f"` — flow start/step/end (cross-thread causal links)
+- `ph:"M"` — metadata (process_name, thread_name) — one-shot at trace start
 
 Output is directly loadable in [Perfetto UI](https://ui.perfetto.dev) when
 wrapped in `{"traceEvents":[...]}` by the host collector. Host-side consumers

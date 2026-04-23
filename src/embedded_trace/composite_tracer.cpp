@@ -52,6 +52,18 @@ void CompositeTracer::flow_end(const char* name, FlowId id) {
     }
 }
 
+void CompositeTracer::set_process_name(const char* name) {
+    for (size_t i = 0; i < child_count_; ++i) {
+        children_[i]->set_process_name(name);
+    }
+}
+
+void CompositeTracer::set_thread_name(ThreadId tid, const char* name) {
+    for (size_t i = 0; i < child_count_; ++i) {
+        children_[i]->set_thread_name(tid, name);
+    }
+}
+
 void CompositeTracer::scope_exit_callback(void* context, const char* /*name*/, ScopeId /*scope_id*/) {
     auto* self = static_cast<CompositeTracer*>(context);
     if (self->stack_depth_ == 0) return;
