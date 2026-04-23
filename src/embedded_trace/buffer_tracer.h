@@ -5,6 +5,7 @@
 #endif
 
 #include "i_tracer.h"
+#include "no_metadata_tracer.h"
 #include "types.h"
 #include <cstddef>
 #include <cstdint>
@@ -45,7 +46,7 @@ using DrainCallback = void (*)(void* context, const DrainEvent& event);
  *
  * Call drain() to iterate stored events.
  */
-class BufferTracer final : public ITracer {
+class BufferTracer final : public NoMetadataTracer {
 public:
     static constexpr size_t MAX_SCOPE_NAMES = 64;
 

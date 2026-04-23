@@ -22,6 +22,13 @@ public:
     }
 
     void counter(const char*, int64_t) override {}
+
+    void flow_start(const char*, FlowId) override {}
+    void flow_step(const char*, FlowId) override {}
+    void flow_end(const char*, FlowId) override {}
+
+    void set_process_name(const char*) override {}
+    void set_thread_name(ThreadId, const char*) override {}
 };
 
 } // namespace et

@@ -120,40 +120,55 @@ source directory, same `ITracer` interface.
 ```cpp
 // embedded_trace/i_tracer.h
 
+// All methods pure virtual. Every implementation makes a conscious
+// choice about every event type — a forgotten override is a compile
+// error, not a silently dropped event.
 class ITracer {
 public:
     virtual ~ITracer() = default;
 
-    /// Begin a named scope. Returns an RAII guard that ends the scope
-    /// on destruction. Scopes nest — the current scope becomes the
-    /// parent of any scope opened before this one closes. `name` MUST
-    /// be a string literal (BufferTracer interns by pointer equality —
-    /// see Scope name lifetime below).
     virtual ScopeGuard scope(const char* name) = 0;
-
-    /// Record a counter value at the current timestamp. Counters are
-    /// independent of scopes — they appear as time-series tracks in
-    /// Perfetto alongside the scope swim lanes.
     virtual void counter(const char* name, int64_t value) = 0;
 
-    /// Mark the start of a causal flow across thread/scope boundaries.
-    virtual void flow_start(const char* name, FlowId id) {}
+    virtual void flow_start(const char* name, FlowId id) = 0;
+    virtual void flow_step(const char* name, FlowId id) = 0;
+    virtual void flow_end(const char* name, FlowId id) = 0;
 
-    /// Mark an intermediate step in a causal flow (e.g. dequeue).
-    virtual void flow_step(const char* name, FlowId id) {}
-
-    /// Mark the end of a causal flow.
-    virtual void flow_end(const char* name, FlowId id) {}
-
-    /// Set the human-readable process name shown in Perfetto.
-    /// Emits a Chrome ph:M metadata event. Default no-op.
-    virtual void set_process_name(const char* name) {}
-
-    /// Set the human-readable name for a specific tid in Perfetto.
-    /// Emits a Chrome ph:M metadata event. Default no-op.
-    virtual void set_thread_name(ThreadId tid, const char* name) {}
+    virtual void set_process_name(const char* name) = 0;
+    virtual void set_thread_name(ThreadId tid, const char* name) = 0;
 };
 ```
+
+To avoid stubbing methods you don't care about, inherit from a narrow
+named mixin instead of `ITracer` directly:
+
+```cpp
+// embedded_trace/no_flow_tracer.h
+class NoFlowTracer : public ITracer {
+    void flow_start(const char*, FlowId) override {}
+    void flow_step(const char*, FlowId) override {}
+    void flow_end(const char*, FlowId) override {}
+    // scope, counter, metadata remain pure
+};
+
+// embedded_trace/no_metadata_tracer.h
+class NoMetadataTracer : public ITracer {
+    void set_process_name(const char*) override {}
+    void set_thread_name(ThreadId, const char*) override {}
+    // scope, counter, flow remain pure
+};
+```
+
+Skipping a mixin is the signal that you're signing up to implement that
+concern. The library does **not** ship a `BaseTracer`-style catch-all —
+name by what you're opting out of.
+
+In practice:
+- **`ITracer`** — SerialTracer, CompositeTracer (both implement all seven).
+- **`NoMetadataTracer`** — BufferTracer (real flow_*, no-op metadata).
+- **`NoFlowTracer` + `NoMetadataTracer`** — a tracer that cares only
+  about scope/counter. NullTracer implements all seven inline instead
+  of chaining bases, as the canonical "do nothing" reference.
 
 Metadata events are one-shot: emit `set_process_name` once at trace
 start, and `set_thread_name(tid, "...")` once per task. Without them,

@@ -16,6 +16,13 @@ Follows [Keep a Changelog](https://keepachangelog.com/) conventions.
 - README quickstart — install instructions, copy-paste-runnable code sample, and Chrome JSON output preview, replacing the previous status-table-only README.
 - Build-time #warning when SerialTracer / BufferTracer / CompositeTracer headers are included without -DEMBEDDED_TRACE_ENABLED=1, catching the silent-no-op-macro footgun at compile time.
 
+### Changed
+- **ITracer is now fully pure virtual.** flow_start/step/end and set_process_name/set_thread_name were previously virtual-with-empty-bodies, which silently dropped events on any subclass that forgot to override. Implementations now either override every method explicitly or inherit from a narrow named mixin:
+  - `NoFlowTracer` — no-op defaults for the three flow_* methods
+  - `NoMetadataTracer` — no-op defaults for the two set_*_name methods
+  No generic `BaseTracer` catch-all — pick by what you're opting out of.
+- NullTracer now implements all seven methods inline (the canonical "do nothing" reference). BufferTracer now inherits NoMetadataTracer. SerialTracer and CompositeTracer unchanged — they already implement the full contract. Third-party tracer subclasses will get a compile error pointing at the missing method, which is the point.
+
 ### Documentation
 - design.md "Tracer ownership" section: three patterns (injected, user-declared global reference, FreeRTOS task-local storage) with their catches. Library ships no global / TLS helper — each pattern is user-side. Notes the C++ thread_local emutls hazard on ESP-IDF (idle task stack overflow) and points at vTaskSetThreadLocalStoragePointer instead.
 - Scope name lifetime rule spelled out: names must be string literals (BufferTracer interns by pointer equality; SerialTracer is lenient but portable code must still use literals). Noted in ITracer::scope() doc, design.md, and README Gotchas.
