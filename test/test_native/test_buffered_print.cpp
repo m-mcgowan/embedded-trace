@@ -95,6 +95,67 @@ TEST_CASE("BufferedPrint: overflow drops newest bytes, preserves earliest") {
     CHECK(sink.str() == "abcdX");
 }
 
+// Sink that delivers at most `chunk_size_` bytes per write call, simulating
+// a backed-up TX ring buffer. The sink itself never returns 0 unless empty.
+class PartialWriteSink : public Print {
+    std::string buffer_;
+    size_t chunk_size_;
+public:
+    explicit PartialWriteSink(size_t chunk_size) : chunk_size_(chunk_size) {}
+    size_t write(uint8_t c) override {
+        buffer_ += static_cast<char>(c);
+        return 1;
+    }
+    size_t write(const uint8_t* data, size_t size) override {
+        size_t n = size < chunk_size_ ? size : chunk_size_;
+        buffer_.append(reinterpret_cast<const char*>(data), n);
+        return n;
+    }
+    const std::string& str() const { return buffer_; }
+};
+
+TEST_CASE("BufferedPrint: flush retries on partial writes from the sink") {
+    g_ready = false;
+    PartialWriteSink sink(4);  // sink delivers 4 bytes per write
+    uint8_t buf[64];
+    BufferedPrint bp(sink, buf, sizeof(buf), ready_fn);
+
+    bp.write(reinterpret_cast<const uint8_t*>("0123456789ab"), 12);
+    CHECK(bp.buffered() == 12);
+
+    // First write after ready triggers the flush — must deliver all 12
+    // bytes despite the sink only accepting 4 at a time.
+    g_ready = true;
+    bp.write(reinterpret_cast<const uint8_t*>("X"), 1);
+    CHECK(sink.str() == "0123456789abX");
+    CHECK_FALSE(bp.overflowed());
+}
+
+// Sink that drops every write — models a permanently-stuck TX path.
+class StuckSink : public Print {
+public:
+    size_t write(uint8_t) override { return 0; }
+    size_t write(const uint8_t*, size_t) override { return 0; }
+};
+
+TEST_CASE("BufferedPrint: flush gives up on stuck sink and marks overflowed") {
+    g_ready = false;
+    StuckSink sink;
+    uint8_t buf[64];
+    BufferedPrint bp(sink, buf, sizeof(buf), ready_fn);
+
+    bp.write(reinterpret_cast<const uint8_t*>("hello"), 5);
+    CHECK(bp.buffered() == 5);
+    CHECK_FALSE(bp.overflowed());
+
+    g_ready = true;
+    bp.write(reinterpret_cast<const uint8_t*>("X"), 1);
+    // Sink delivered nothing — bytes are lost, overflowed_ is set so the
+    // caller can detect it. buffered() resets either way.
+    CHECK(bp.buffered() == 0);
+    CHECK(bp.overflowed());
+}
+
 TEST_CASE("BufferedPrint: single-byte write buffers like multi-byte write") {
     g_ready = false;
     StringPrint sink;

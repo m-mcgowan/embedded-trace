@@ -38,10 +38,23 @@ size_t BufferedPrint::write(const uint8_t* data, size_t size) {
 }
 
 void BufferedPrint::flush_buffer() {
-    if (buffer_len_ > 0) {
-        sink_.write(buffer_, buffer_len_);
-        buffer_len_ = 0;
+    if (buffer_len_ == 0) return;
+    // Sinks like Arduino's HWCDC can return less than `size` when their TX
+    // ring is full or the host has briefly stalled — the unwritten bytes
+    // would then be lost forever. Retry on partial progress, capped so a
+    // permanently-stuck sink doesn't spin. If we still can't deliver the
+    // whole buffer, surface it via overflowed_ so callers can observe loss.
+    size_t written = 0;
+    constexpr size_t kMaxRetries = 4;
+    for (size_t i = 0; i < kMaxRetries && written < buffer_len_; ++i) {
+        size_t n = sink_.write(buffer_ + written, buffer_len_ - written);
+        if (n == 0) break;
+        written += n;
     }
+    if (written < buffer_len_) {
+        overflowed_ = true;
+    }
+    buffer_len_ = 0;
 }
 
 } // namespace et
